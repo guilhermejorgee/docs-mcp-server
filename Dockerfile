@@ -3,7 +3,7 @@ FROM node:22-slim AS base
 
 WORKDIR /app
 
-# Install build dependencies for native modules (better-sqlite3, tree-sitter, etc.)
+# Install build dependencies for native modules (tree-sitter, etc.)
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
   python3 \

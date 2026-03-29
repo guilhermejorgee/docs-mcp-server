@@ -2,13 +2,6 @@
 
 ## High Priority
 
-### sqlite-vec Alpha Dependency
-
-**Evidence:** `"sqlite-vec": "^0.1.7-alpha.2"` in `package.json`
-**Risk:** The vector search extension is still in alpha. API may break on minor updates; performance and stability guarantees are limited.
-**Impact:** Core feature — all semantic search depends on this extension.
-**Fix approach:** Monitor sqlite-vec releases; pin to a specific version; test vector operations thoroughly before upgrading. Consider abstracting the vector interface to allow swapping implementations.
-
 ### Playwright Browser Auto-Install at Startup
 
 **Evidence:** `ensurePlaywrightBrowsersInstalled()` called unconditionally in `src/index.ts:16`
@@ -27,10 +20,10 @@
 
 ### No Embedding Dimension Migration Guard
 
-**Evidence:** `db/migrations/003-normalize-vector-table.sql` creates vector columns; `src/store/DocumentStore.ts` uses `FixedDimensionEmbeddings` wrapper to handle dimension mismatches.
-**Risk:** If the embedding model is changed after indexing, the stored vector dimension (e.g., 1536 for OpenAI `text-embedding-3-small`) won't match the new model's dimension. The `FixedDimensionEmbeddings` wrapper pads/truncates, which silently degrades search quality.
-**Impact:** Silent search quality regression when embedding model is changed.
-**Fix approach:** Add a startup check that validates the configured model's dimension matches the DB's vector column dimension. Warn or refuse to start if mismatched without explicit migration.
+**Evidence:** `src/store/DocumentStore.ts` uses `FixedDimensionEmbeddings` wrapper to handle dimension mismatches during semantic chunking.
+**Risk:** Embeddings are used transiently during the `SemanticChunkingStrategy` to detect topic boundaries. If the embedding model is changed between indexing runs, different chunking boundaries will be produced for the same content — silently changing chunk granularity.
+**Impact:** Silent chunking quality change when embedding model is changed. Re-indexing required for consistent results.
+**Fix approach:** Document that changing the embedding model requires re-indexing affected libraries. Optionally surface the configured model name in library metadata so users know when a re-index is needed.
 
 ### postinstall Script Suppresses Playwright Install
 

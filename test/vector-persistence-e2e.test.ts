@@ -1,17 +1,10 @@
 /**
- * Ensures embeddings are persisted into the documents_vec virtual table.
- *
- * This test is self-contained:
- * - Uses a temporary SQLite database (storePath points to a temp dir)
- * - Uses MSW to mock OpenAI embeddings so it does not require network access
+ * Ensures documents are persisted and indexed in PostgreSQL.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { config } from "dotenv";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
 import { ScrapeTool } from "../src/tools/ScrapeTool";
 import { createLocalDocumentManagement } from "../src/store";
 import { PipelineFactory } from "../src/pipeline/PipelineFactory";
@@ -21,20 +14,22 @@ import {
 } from "../src/store/embeddings/EmbeddingConfig";
 import { EventBusService } from "../src/events";
 import { loadConfig } from "../src/utils/config";
+import { createPgContainer } from "./pg-container";
 
-config();
+const container = createPgContainer();
 
 describe("Vector persistence", () => {
   let tempDir: string;
   let pipeline: any;
   let docService: any;
   let scrapeTool: ScrapeTool;
-  const appConfig = loadConfig();
 
   let prevOpenAiApiKey: string | undefined;
   let prevOpenAiApiBase: string | undefined;
 
   beforeAll(async () => {
+    await container.start();
+
     // Ensure vector search initializes in tests without requiring real credentials.
     prevOpenAiApiKey = process.env.OPENAI_API_KEY;
     prevOpenAiApiBase = process.env.OPENAI_API_BASE;
@@ -47,8 +42,10 @@ describe("Vector persistence", () => {
       "openai:text-embedding-3-small",
     );
 
+    const appConfig = loadConfig();
     appConfig.app.storePath = tempDir;
     appConfig.app.embeddingModel = embeddingConfig.modelSpec;
+    appConfig.db.postgresql.connectionString = container.connectionString;
 
     const eventBus = new EventBusService();
     docService = await createLocalDocumentManagement(eventBus, appConfig);
@@ -59,7 +56,7 @@ describe("Vector persistence", () => {
     await pipeline.start();
 
     scrapeTool = new ScrapeTool(pipeline, appConfig.scraper);
-  }, 30000);
+  }, 120_000);
 
   afterAll(async () => {
     if (pipeline) {
@@ -87,10 +84,12 @@ describe("Vector persistence", () => {
     } else {
       process.env.OPENAI_API_BASE = prevOpenAiApiBase;
     }
+
+    await container.stop();
   });
 
   it(
-    "persists embeddings into documents_vec",
+    "indexes documents and exposes embedding model for semantic chunking",
     async () => {
       const readmePath = path.resolve(process.cwd(), "README.md");
       const fileUrl = `file://${readmePath}`;
@@ -105,22 +104,14 @@ describe("Vector persistence", () => {
       const exists = await docService.exists("vector-persist-lib", "1.0.0");
       expect(exists).toBe(true);
 
-      const dbPath = path.join(tempDir, "documents.db");
-      const db = new Database(dbPath);
-      sqliteVec.load(db);
+      // Verify documents are persisted in PostgreSQL
+      const versionId = await docService.store.resolveVersionId("vector-persist-lib", "1.0.0");
+      const pages = await docService.store.getPagesByVersionId(versionId);
+      expect(pages.length).toBeGreaterThan(0);
 
-      const { chunkCount } = db
-        .prepare(
-          "SELECT COUNT(*) as chunkCount FROM documents WHERE embedding IS NOT NULL",
-        )
-        .get() as { chunkCount: number };
-      expect(chunkCount).toBeGreaterThan(0);
-
-      const { vecCount } = db
-        .prepare("SELECT COUNT(*) as vecCount FROM documents_vec")
-        .get() as { vecCount: number };
-      expect(vecCount).toBeGreaterThan(0);
-      expect(vecCount).toBe(chunkCount);
+      // Verify the embedding model is accessible for semantic chunking
+      const embeddingModel = docService.store.getEmbeddingModel();
+      expect(embeddingModel).not.toBeNull();
     },
     60000,
   );

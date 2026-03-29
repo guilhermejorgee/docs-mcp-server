@@ -196,13 +196,14 @@ If no authentication is available, public repositories are still accessible but 
 
 ### Splitter (`splitter`)
 
-Settings for chunking text for vector search.
+Settings for document chunking.
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
 | `minChunkSize` | `500` | Minimum characters per chunk body. Chunks below this threshold are merged with adjacent chunks by the greedy optimizer. |
 | `preferredChunkSize` | `1500` | Soft target for chunk body size in characters. The greedy optimizer splits when combining two chunks would exceed this value, provided both sides are already above `minChunkSize`. |
 | `maxChunkSize` | `5000` | Hard upper limit for chunk body size in characters. No chunk body will exceed this value. |
+| `chunkingStrategy` | `structural` | Strategy used to split documents into chunks. `"semantic"` uses sentence embeddings and cosine similarity to detect topic boundaries — requires an embedding model to be configured. `"structural"` splits at markdown headings and code block boundaries (free, deterministic, and the default when no embedding model is configured). See **[Semantic Chunking](../concepts/semantic-chunking.md)** for details. |
 
 > **Note:** These size limits apply to the **text body** of each chunk. Before embedding,
 > a small metadata header (page title, URL, section path) is prepended to each chunk,
@@ -227,14 +228,14 @@ Settings for the vector embedding generation.
 
 ### Search (`search`)
 
-Settings for the hybrid search ranking system.
+Settings for the full-text search system.
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
 | `overfetchFactor` | `2` | Multiplier on the search limit for FTS overfetch (fetches `limit * overfetchFactor` candidates). |
-| `weightVec` | `1` | RRF weight for vector search results. |
+| `weightVec` | `1` | RRF weight for vector search results. (deprecated — no longer used; kept for backwards config compatibility) |
 | `weightFts` | `1` | RRF weight for full-text search results. |
-| `vectorMultiplier` | `10` | Additional multiplier for vector search candidate count (`limit * overfetchFactor * vectorMultiplier`). |
+| `vectorMultiplier` | `10` | Additional multiplier for vector search candidate count (`limit * overfetchFactor * vectorMultiplier`). (deprecated — no longer used; kept for backwards config compatibility) |
 
 ### Database (`db`)
 

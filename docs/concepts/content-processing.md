@@ -2,7 +2,7 @@
 
 ## Overview
 
-The content processing system transforms raw content from various sources into searchable document chunks through a modular strategy-pipeline-splitter architecture. The system handles web pages, local files, and package registries, processing different content types with specialized pipelines that preserve document structure while optimizing chunk sizes for embedding generation.
+The content processing system transforms raw content from various sources into searchable document chunks through a modular strategy-pipeline-splitter architecture. The system handles web pages, local files, and package registries, processing different content types with specialized pipelines that preserve document structure while optimizing chunk sizes for storage and retrieval.
 
 ## Strategy Pattern Architecture
 
@@ -132,7 +132,7 @@ Segment content into semantic chunks while preserving document structure:
 - Merges small chunks until reaching minimum size thresholds
 - Respects semantic boundaries from content-specific splitters
 - Handles oversized content while preserving document structure
-- Ensures optimal chunk sizes for embedding generation
+- Ensures optimal chunk sizes for storage and retrieval
 
 Chunk sizes are controlled by three character-based thresholds:
 
@@ -142,10 +142,11 @@ Chunk sizes are controlled by three character-based thresholds:
 | `preferredChunkSize` | Soft target -- the optimizer splits when merging would exceed this |
 | `maxChunkSize` | Hard ceiling -- no chunk body will exceed this value |
 
-All sizes are measured in **characters** (`string.length`), not tokens. Before embedding,
-a metadata header (page title, URL, section path) is prepended to each chunk, so the total
-text sent to the embedding model is slightly larger than the chunk body. The actual token
-count depends on the embedding model's tokenizer.
+All sizes are measured in **characters** (`string.length`), not tokens. A metadata header
+(page title, URL, section path) is prepended to each chunk for search ranking and display
+purposes, so the stored chunk body is slightly smaller than the combined text. Embeddings
+are only generated transiently inside `SemanticChunkingStrategy` as a splitting aid and
+are **not** persisted to the database.
 
 ## Content Processing Flow
 
@@ -185,7 +186,6 @@ graph TD
 
     subgraph "Output"
         G[ContentChunk Array]
-        H[Embedding Generation]
         I[Database Storage]
     end
 
@@ -216,8 +216,7 @@ graph TD
 
     F1 --> F2
     F2 --> G
-    G --> H
-    H --> I
+    G --> I
 
     style A1 fill:#e1f5fe
     style A2 fill:#e1f5fe

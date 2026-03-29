@@ -15,7 +15,7 @@
 - HTTP server: Fastify 5
 - RPC layer: tRPC 11 (HTTP commands + WebSocket event subscriptions)
 - CLI: yargs 18
-- Database: better-sqlite3 12 + sqlite-vec 0.1.7 (vector extension)
+- Database: PostgreSQL 14+ via pg (node-postgres) + pgvector extension
 - Schema validation: Zod 4
 - Config format: YAML (via `yaml` library), auto-saves defaults to `~/.config/docs-mcp-server/config.yaml`
 - Auth: OAuth2/OIDC via `jose` JWT library

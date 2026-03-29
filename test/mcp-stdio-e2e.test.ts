@@ -8,12 +8,23 @@
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { getCliCommand } from "./test-helpers";
+import { createPgContainer } from "./pg-container";
+
+const container = createPgContainer();
 
 describe("MCP stdio server E2E", () => {
   let client: Client | null = null;
   let transport: StdioClientTransport | null = null;
+
+  beforeAll(async () => {
+    await container.start();
+  }, 120_000);
+
+  afterAll(async () => {
+    await container.stop();
+  });
 
   beforeEach(() => {
     // Reset state before each test
@@ -62,6 +73,8 @@ describe("MCP stdio server E2E", () => {
       cwd: projectRoot,
       env: {
         ...testEnv,
+        DOCS_MCP_BACKEND: "postgresql",
+        DATABASE_URL: container.connectionString,
         DOCS_MCP_STORE_PATH: path.join(projectRoot, "test", ".test-store-stdio"),
         DOCS_MCP_TELEMETRY: "false",
       },
@@ -116,6 +129,8 @@ describe("MCP stdio server E2E", () => {
       cwd: projectRoot,
       env: {
         ...testEnv,
+        DOCS_MCP_BACKEND: "postgresql",
+        DATABASE_URL: container.connectionString,
         DOCS_MCP_STORE_PATH: path.join(projectRoot, "test", ".test-store-stdio"),
         DOCS_MCP_TELEMETRY: "false",
       },

@@ -146,12 +146,14 @@ describe("PipelineWorker", () => {
       mockJob.version,
       1,
       mockProcessed1,
+      mockJob.scraperOptions,
     );
     expect(mockStore.addScrapeResult).toHaveBeenCalledWith(
       mockJob.library,
       mockJob.version,
       1,
       mockProcessed2,
+      mockJob.scraperOptions,
     );
 
     // Verify onJobProgress was called
@@ -435,6 +437,7 @@ describe("PipelineWorker", () => {
         mockJob.version,
         1,
         mockResult,
+        mockJob.scraperOptions,
       );
 
       // Verify call order: delete before add
@@ -488,6 +491,7 @@ describe("PipelineWorker", () => {
         mockJob.version,
         1,
         mockResult,
+        mockJob.scraperOptions,
       );
 
       // Verify progress was reported

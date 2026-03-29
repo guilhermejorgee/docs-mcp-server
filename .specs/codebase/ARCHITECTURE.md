@@ -21,8 +21,8 @@
     ▼               ▼
 ┌──────────┐  ┌──────────────────────────────────────┐
 │ Pipeline │  │  Store (DocumentManagementService)    │
-│ Manager  │  │  SQLite + sqlite-vec + FTS5            │
-│ Worker   │  │  Hybrid search (vector + FTS + RRF)   │
+│ Manager  │  │  PostgreSQL + pgvector + tsvector FTS   │
+│ Worker   │  │  FTS search (tsvector + unaccent)       │
 └────┬─────┘  └──────────────────────────────────────┘
      │
      ▼
@@ -45,8 +45,8 @@
 ### Write-Through Architecture
 
 **Location:** `src/pipeline/PipelineManager.ts`
-**Purpose:** In-memory job state and SQLite version status stay in sync at all times.
-**Implementation:** Every `updateJobStatus()` call writes to both `jobMap` (in-memory) and SQLite via `store.updateVersionStatus()`.
+**Purpose:** In-memory job state and PostgreSQL version status stay in sync at all times.
+**Implementation:** Every `updateJobStatus()` call writes to both `jobMap` (in-memory) and PostgreSQL via `store.updateVersionStatus()`.
 **Example:** PipelineManager lines 696–751 — `updateJobStatus()` updates in-memory, writes DB, emits event.
 
 ### Strategy Pattern (Scraper)
@@ -91,7 +91,7 @@
 ```
 ScrapeTool.execute()
   → PipelineManager.enqueueScrapeJob()
-    → [job persisted to SQLite as QUEUED]
+    → [job persisted to PostgreSQL as QUEUED]
     → PipelineWorker.executeJob()
       → ScraperService.scrape()
         → Strategy selects fetcher (HTTP/Playwright/file)
@@ -111,9 +111,7 @@ SearchTool.execute()
   → docService.findBestVersion()  (semver resolution)
   → docService.searchStore()
     → DocumentRetrieverService
-      → Vector similarity search (sqlite-vec KNN)
-      → Full-text search (SQLite FTS5)
-      → RRF fusion of ranked results
+      → Full-text search (PostgreSQL tsvector FTS)
       → Assembly: enrich with parent/sibling chunks
   → returns StoreSearchResult[]
 ```

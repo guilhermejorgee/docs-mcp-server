@@ -13,8 +13,13 @@ import {
   ModelConfigurationError,
   UnsupportedProviderError,
 } from "./embeddings/EmbeddingFactory";
-import { FixedDimensionEmbeddings } from "./embeddings/FixedDimensionEmbeddings";
-import { ConnectionError, DimensionError, StoreError } from "./errors";
+
+// Parse BIGINT (OID 20) as JavaScript number. Auto-increment IDs in this
+// application are well within Number.MAX_SAFE_INTEGER so precision loss is
+// not a concern.
+pg.types.setTypeParser(20, Number);
+
+import { ConnectionError, StoreError } from "./errors";
 import type { IDocumentStore } from "./IDocumentStore";
 import type { DbChunkMetadata, DbChunkRank, StoredScraperOptions } from "./types";
 import {
@@ -34,59 +39,35 @@ interface RawSearchResult extends DbChunk {
   title?: string | null;
   source_content_type?: string | null;
   content_type?: string | null;
-  vec_score?: number;
   fts_score?: number;
-}
-
-interface RankedResult extends RawSearchResult {
-  vec_rank?: number;
-  fts_rank?: number;
-  rrf_score: number;
 }
 
 /**
  * Manages document storage and retrieval using PostgreSQL with pgvector and full-text search.
- * Implements the IDocumentStore interface, providing the same API as SqliteDocumentStore
- * but backed by a PostgreSQL database.
  */
 export class PostgresDocumentStore implements IDocumentStore {
   private readonly config: AppConfig;
   private readonly pool: pg.Pool;
 
-  private embeddings!: Embeddings;
-  private readonly dbDimension: number;
-  private readonly searchWeightVec: number;
-  private readonly searchWeightFts: number;
-  private readonly searchOverfetchFactor: number;
-  private readonly vectorSearchMultiplier: number;
-  private readonly splitterMaxChunkSize: number;
-  private readonly embeddingBatchSize: number;
-  private readonly embeddingBatchChars: number;
-  private readonly embeddingInitTimeoutMs: number;
-  private modelDimension!: number;
+  private embeddings: Embeddings | undefined;
   private readonly embeddingConfig?: EmbeddingModelConfig | null;
-  private isVectorSearchEnabled: boolean = false;
 
   constructor(connectionString: string, config: AppConfig) {
     if (!connectionString) {
       throw new StoreError("Missing required PostgreSQL connection string");
     }
     this.config = config;
-    this.dbDimension = config.embeddings.vectorDimension;
-    this.searchWeightVec = config.search.weightVec;
-    this.searchWeightFts = config.search.weightFts;
-    this.searchOverfetchFactor = config.search.overfetchFactor;
-    this.vectorSearchMultiplier = config.search.vectorMultiplier;
-    this.splitterMaxChunkSize = config.splitter.maxChunkSize;
-    this.embeddingBatchSize = config.embeddings.batchSize;
-    this.embeddingBatchChars = config.embeddings.batchChars;
-    this.embeddingInitTimeoutMs = config.embeddings.initTimeoutMs;
 
     this.pool = new pg.Pool({
       connectionString,
       max: config.db.postgresql.poolSize,
       idleTimeoutMillis: config.db.postgresql.idleTimeoutMs,
       connectionTimeoutMillis: config.db.postgresql.connectionTimeoutMs,
+    });
+    // Prevent unhandled 'error' events (e.g., connection terminated by administrator)
+    // from crashing the process when the pool is shut down during tests.
+    this.pool.on("error", (err) => {
+      logger.debug(`Pool client error: ${err.message}`);
     });
 
     this.embeddingConfig = this.resolveEmbeddingConfig(config.app.embeddingModel);
@@ -132,140 +113,6 @@ export class PostgresDocumentStore implements IDocumentStore {
     return rows[0] ?? null;
   }
 
-  /**
-   * Serialize a numeric embedding vector to PostgreSQL vector literal format.
-   */
-  private serializeVector(vector: number[]): string {
-    return `[${vector.join(",")}]`;
-  }
-
-  /**
-   * Pads a vector to the fixed database dimension by appending zeros.
-   */
-  private padVector(vector: number[]): number[] {
-    if (vector.length > this.dbDimension) {
-      throw new Error(
-        `Vector dimension ${vector.length} exceeds database dimension ${this.dbDimension}`,
-      );
-    }
-    if (vector.length === this.dbDimension) {
-      return vector;
-    }
-    return [...vector, ...new Array(this.dbDimension - vector.length).fill(0)];
-  }
-
-  // ---------------------------------------------------------------------------
-  // RRF ranking helpers (identical logic to SqliteDocumentStore)
-  // ---------------------------------------------------------------------------
-
-  private calculateRRF(vecRank?: number, ftsRank?: number, k = 60): number {
-    let rrf = 0;
-    if (vecRank !== undefined) {
-      rrf += this.searchWeightVec / (k + vecRank);
-    }
-    if (ftsRank !== undefined) {
-      rrf += this.searchWeightFts / (k + ftsRank);
-    }
-    return rrf;
-  }
-
-  private assignRanks(results: RawSearchResult[]): RankedResult[] {
-    const vecRanks = new Map<number, number>();
-    const ftsRanks = new Map<number, number>();
-
-    results
-      .filter((r) => r.vec_score !== undefined)
-      .sort((a, b) => (b.vec_score ?? 0) - (a.vec_score ?? 0))
-      .forEach((result, index) => {
-        vecRanks.set(Number(result.id), index + 1);
-      });
-
-    results
-      .filter((r) => r.fts_score !== undefined)
-      .sort((a, b) => (b.fts_score ?? 0) - (a.fts_score ?? 0))
-      .forEach((result, index) => {
-        ftsRanks.set(Number(result.id), index + 1);
-      });
-
-    return results.map((result) => ({
-      ...result,
-      vec_rank: vecRanks.get(Number(result.id)),
-      fts_rank: ftsRanks.get(Number(result.id)),
-      rrf_score: this.calculateRRF(
-        vecRanks.get(Number(result.id)),
-        ftsRanks.get(Number(result.id)),
-      ),
-    }));
-  }
-
-  // ---------------------------------------------------------------------------
-  // Embedding helpers (same logic as SqliteDocumentStore)
-  // ---------------------------------------------------------------------------
-
-  private isInputSizeError(error: unknown): boolean {
-    if (!(error instanceof Error)) return false;
-    const message = error.message.toLowerCase();
-    return (
-      message.includes("maximum context length") ||
-      message.includes("too long") ||
-      message.includes("token limit") ||
-      message.includes("input is too large") ||
-      message.includes("exceeds") ||
-      (message.includes("max") && message.includes("token"))
-    );
-  }
-
-  private async embedDocumentsWithRetry(
-    texts: string[],
-    isRetry = false,
-  ): Promise<number[][]> {
-    if (texts.length === 0) return [];
-
-    try {
-      return await this.embeddings.embedDocuments(texts);
-    } catch (error) {
-      if (this.isInputSizeError(error)) {
-        if (texts.length > 1) {
-          const midpoint = Math.floor(texts.length / 2);
-          const firstHalf = texts.slice(0, midpoint);
-          const secondHalf = texts.slice(midpoint);
-
-          if (!isRetry) {
-            logger.warn(
-              `⚠️  Batch of ${texts.length} texts exceeded size limit, splitting into ${firstHalf.length} + ${secondHalf.length}`,
-            );
-          }
-
-          const [firstEmbeddings, secondEmbeddings] = await Promise.all([
-            this.embedDocumentsWithRetry(firstHalf, true),
-            this.embedDocumentsWithRetry(secondHalf, true),
-          ]);
-          return [...firstEmbeddings, ...secondEmbeddings];
-        } else {
-          const text = texts[0];
-          const midpoint = Math.floor(text.length / 2);
-          const firstHalf = text.substring(0, midpoint);
-
-          if (!isRetry) {
-            logger.warn(
-              `⚠️  Single text exceeded embedding size limit (${text.length} chars).`,
-            );
-          }
-
-          try {
-            return await this.embedDocumentsWithRetry([firstHalf], true);
-          } catch (retryError) {
-            logger.error(
-              `❌ Failed to embed even after splitting. Original length: ${text.length}`,
-            );
-            throw retryError;
-          }
-        }
-      }
-      throw error;
-    }
-  }
-
   private async initializeEmbeddings(): Promise<void> {
     if (this.embeddingConfig === null || this.embeddingConfig === undefined) {
       logger.debug(
@@ -278,9 +125,8 @@ export class PostgresDocumentStore implements IDocumentStore {
 
     if (!areCredentialsAvailable(config.provider)) {
       logger.warn(
-        `⚠️  No credentials found for ${config.provider} embedding provider. Vector search is disabled.\n` +
-          `   Only full-text search will be available. To enable vector search, please configure the required\n` +
-          `   environment variables for ${config.provider} or choose a different provider.\n` +
+        `⚠️  No credentials found for ${config.provider} embedding provider. Embeddings disabled.\n` +
+          `   Configure the required environment variables for ${config.provider}.\n` +
           `   See README.md for configuration options or run with --help for more details.`,
       );
       return;
@@ -288,52 +134,9 @@ export class PostgresDocumentStore implements IDocumentStore {
 
     try {
       this.embeddings = createEmbeddingModel(config.modelSpec, {
-        requestTimeoutMs: this.config.embeddings.requestTimeoutMs,
-        vectorDimension: this.dbDimension,
+        config: this.config.embeddings,
       });
-
-      if (config.dimensions !== null) {
-        this.modelDimension = config.dimensions;
-      } else {
-        const testPromise = this.embeddings.embedQuery("test");
-        let timeoutId: NodeJS.Timeout | undefined;
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => {
-            reject(
-              new Error(
-                `Embedding service connection timed out after ${this.embeddingInitTimeoutMs / 1000} seconds`,
-              ),
-            );
-          }, this.embeddingInitTimeoutMs);
-        });
-
-        try {
-          const testVector = await Promise.race([testPromise, timeoutPromise]);
-          this.modelDimension = testVector.length;
-        } finally {
-          if (timeoutId !== undefined) {
-            clearTimeout(timeoutId);
-          }
-        }
-
-        EmbeddingConfig.setKnownModelDimensions(config.model, this.modelDimension);
-      }
-
-      if (
-        this.embeddings instanceof FixedDimensionEmbeddings &&
-        this.embeddings.allowTruncate
-      ) {
-        this.modelDimension = Math.min(this.modelDimension, this.dbDimension);
-      }
-
-      if (this.modelDimension > this.dbDimension) {
-        throw new DimensionError(config.modelSpec, this.modelDimension, this.dbDimension);
-      }
-
-      this.isVectorSearchEnabled = true;
-      logger.debug(
-        `Embeddings initialized: ${config.provider}:${config.model} (${this.modelDimension}d)`,
-      );
+      logger.debug(`Embeddings initialized: ${config.provider}:${config.model}`);
     } catch (error) {
       if (error instanceof Error) {
         if (
@@ -383,10 +186,14 @@ export class PostgresDocumentStore implements IDocumentStore {
   // ---------------------------------------------------------------------------
 
   getActiveEmbeddingConfig(): EmbeddingModelConfig | null {
-    if (!this.isVectorSearchEnabled || !this.embeddingConfig) {
+    if (!this.embeddings || !this.embeddingConfig) {
       return null;
     }
     return this.embeddingConfig;
+  }
+
+  getEmbeddingModel(): Embeddings | null {
+    return this.embeddings ?? null;
   }
 
   async initialize(): Promise<void> {
@@ -769,71 +576,6 @@ export class PostgresDocumentStore implements IDocumentStore {
         return;
       }
 
-      // Generate embeddings in batch if vector search is enabled
-      let paddedEmbeddings: number[][] = [];
-
-      if (this.isVectorSearchEnabled) {
-        const texts = chunks.map((chunk) => {
-          const header = `<title>${title}</title>\n<url>${url}</url>\n<path>${(chunk.section.path || []).join(" / ")}</path>\n`;
-          return `${header}${chunk.content}`;
-        });
-
-        for (let i = 0; i < chunks.length; i++) {
-          const bodySize = chunks[i].content.length;
-          if (bodySize > this.splitterMaxChunkSize) {
-            logger.warn(
-              `⚠️  Chunk ${i + 1}/${chunks.length} body exceeds max size: ${bodySize} > ${this.splitterMaxChunkSize} chars (URL: ${url})`,
-            );
-          }
-        }
-
-        const maxBatchChars = this.embeddingBatchChars;
-        const rawEmbeddings: number[][] = [];
-        let currentBatch: string[] = [];
-        let currentBatchSize = 0;
-        let batchCount = 0;
-
-        for (const text of texts) {
-          const textSize = text.length;
-
-          if (currentBatchSize + textSize > maxBatchChars && currentBatch.length > 0) {
-            batchCount++;
-            logger.debug(
-              `Processing embedding batch ${batchCount}: ${currentBatch.length} texts, ${currentBatchSize} chars`,
-            );
-            const batchEmbeddings = await this.embedDocumentsWithRetry(currentBatch);
-            rawEmbeddings.push(...batchEmbeddings);
-            currentBatch = [];
-            currentBatchSize = 0;
-          }
-
-          currentBatch.push(text);
-          currentBatchSize += textSize;
-
-          if (currentBatch.length >= this.embeddingBatchSize) {
-            batchCount++;
-            logger.debug(
-              `Processing embedding batch ${batchCount}: ${currentBatch.length} texts, ${currentBatchSize} chars`,
-            );
-            const batchEmbeddings = await this.embedDocumentsWithRetry(currentBatch);
-            rawEmbeddings.push(...batchEmbeddings);
-            currentBatch = [];
-            currentBatchSize = 0;
-          }
-        }
-
-        if (currentBatch.length > 0) {
-          batchCount++;
-          logger.debug(
-            `Processing final embedding batch ${batchCount}: ${currentBatch.length} texts, ${currentBatchSize} chars`,
-          );
-          const batchEmbeddings = await this.embedDocumentsWithRetry(currentBatch);
-          rawEmbeddings.push(...batchEmbeddings);
-        }
-
-        paddedEmbeddings = rawEmbeddings.map((vector) => this.padVector(vector));
-      }
-
       // Resolve library and version IDs
       const versionId = await this.resolveVersionId(library, version);
 
@@ -903,46 +645,15 @@ export class PostgresDocumentStore implements IDocumentStore {
           };
           const metadataJson = JSON.stringify(metadataObj);
 
-          if (this.isVectorSearchEnabled && paddedEmbeddings.length > 0) {
-            const vectorStr = this.serializeVector(paddedEmbeddings[i]);
-            const pathStr = (chunk.section.path || []).join(" ");
-
-            await client.query(
-              `INSERT INTO documents (page_id, content, metadata, sort_order, embedding, fts_vector)
-               VALUES ($1, $2, $3::jsonb, $4, $5::vector,
-                 setweight(to_tsvector('multilingual', coalesce($6, '')), 'A') ||
-                 setweight(to_tsvector('multilingual', coalesce($7, '')), 'B') ||
-                 setweight(to_tsvector('multilingual', coalesce($8, '')), 'C'))`,
-              [
-                pageId,
-                chunk.content,
-                metadataJson,
-                i,
-                vectorStr,
-                title || "",
-                pathStr,
-                chunk.content,
-              ],
-            );
-          } else {
-            const pathStr = (chunk.section.path || []).join(" ");
-            await client.query(
-              `INSERT INTO documents (page_id, content, metadata, sort_order, fts_vector)
+          const pathStr = (chunk.section.path || []).join(" ");
+          await client.query(
+            `INSERT INTO documents (page_id, content, metadata, sort_order, fts_vector)
                VALUES ($1, $2, $3::jsonb, $4,
                  setweight(to_tsvector('multilingual', coalesce($5, '')), 'A') ||
                  setweight(to_tsvector('multilingual', coalesce($6, '')), 'B') ||
                  setweight(to_tsvector('multilingual', coalesce($7, '')), 'C'))`,
-              [
-                pageId,
-                chunk.content,
-                metadataJson,
-                i,
-                title || "",
-                pathStr,
-                chunk.content,
-              ],
-            );
-          }
+            [pageId, chunk.content, metadataJson, i, title || "", pathStr, chunk.content],
+          );
         }
 
         await client.query("COMMIT");
@@ -1108,7 +819,7 @@ export class PostgresDocumentStore implements IDocumentStore {
   async getById(id: string): Promise<DbPageChunk | null> {
     try {
       const row = await this.queryOne<DbPageChunk>(
-        `SELECT d.id::text, d.page_id, d.content, d.metadata, d.sort_order, d.embedding, d.created_at,
+        `SELECT d.id::text, d.page_id, d.content, d.metadata, d.sort_order, d.created_at,
                 p.url, p.title, p.source_content_type, p.content_type
          FROM documents d
          JOIN pages p ON d.page_id = p.id
@@ -1136,84 +847,7 @@ export class PostgresDocumentStore implements IDocumentStore {
       const normalizedLibrary = library.toLowerCase();
       const normalizedVersion = version.toLowerCase();
 
-      if (this.isVectorSearchEnabled) {
-        const rawEmbedding = await this.embeddings.embedQuery(query);
-        const embedding = this.padVector(rawEmbedding);
-        const vectorStr = this.serializeVector(embedding);
-
-        const overfetchLimit = Math.max(1, limit * this.searchOverfetchFactor);
-        const vectorSearchK = overfetchLimit * this.vectorSearchMultiplier;
-
-        const sql = `
-          WITH vector_results AS (
-            SELECT d.id, 1 - (d.embedding <=> $1::vector) as vec_score
-            FROM documents d
-            JOIN pages p ON d.page_id = p.id
-            JOIN versions v ON p.version_id = v.id
-            JOIN libraries l ON v.library_id = l.id
-            WHERE l.name = $2 AND v.name = $3
-              AND d.embedding IS NOT NULL
-            ORDER BY d.embedding <=> $1::vector
-            LIMIT $4
-          ),
-          fts_results AS (
-            SELECT d.id, ts_rank_cd(d.fts_vector, plainto_tsquery('multilingual', $5)) as fts_score
-            FROM documents d
-            JOIN pages p ON d.page_id = p.id
-            JOIN versions v ON p.version_id = v.id
-            JOIN libraries l ON v.library_id = l.id
-            WHERE l.name = $2 AND v.name = $3
-              AND d.fts_vector @@ plainto_tsquery('multilingual', $5)
-            LIMIT $6
-          )
-          SELECT d.id::text, d.page_id, d.content, d.metadata, d.sort_order, d.created_at,
-                 p.url, p.title, p.source_content_type, p.content_type,
-                 COALESCE(vr.vec_score, 0) as vec_score,
-                 COALESCE(fr.fts_score, 0) as fts_score
-          FROM documents d
-          JOIN pages p ON d.page_id = p.id
-          JOIN versions v ON p.version_id = v.id
-          JOIN libraries l ON v.library_id = l.id
-          LEFT JOIN vector_results vr ON d.id = vr.id
-          LEFT JOIN fts_results fr ON d.id = fr.id
-          WHERE (vr.id IS NOT NULL OR fr.id IS NOT NULL)
-            AND NOT (d.metadata->'types' @> '["structural"]'::jsonb)
-        `;
-
-        const rawResults = await this.query<RawSearchResult>(sql, [
-          vectorStr,
-          normalizedLibrary,
-          normalizedVersion,
-          vectorSearchK,
-          query,
-          overfetchLimit,
-        ]);
-
-        // Zero out vec_score if it came back as 0 and wasn't in vector_results
-        // (to distinguish it from a real result). Keep both scores as-is for RRF.
-        const rankedResults = this.assignRanks(rawResults);
-
-        const topResults = rankedResults
-          .sort((a, b) => b.rrf_score - a.rrf_score)
-          .slice(0, limit);
-
-        return topResults.map((row) => {
-          const chunk = this.normalizeChunkRow({
-            ...row,
-            url: row.url || "",
-            title: row.title ?? null,
-            source_content_type: row.source_content_type ?? null,
-            content_type: row.content_type ?? null,
-          }) as DbPageChunk;
-          return Object.assign(chunk, {
-            score: row.rrf_score,
-            vec_rank: row.vec_rank,
-            fts_rank: row.fts_rank,
-          });
-        });
-      } else {
-        // FTS-only fallback
-        const sql = `
+      const sql = `
           SELECT d.id::text, d.page_id, d.content, d.metadata, d.sort_order, d.created_at,
                  p.url, p.title, p.source_content_type, p.content_type,
                  ts_rank_cd(d.fts_vector, plainto_tsquery('multilingual', $1)) as fts_score
@@ -1228,25 +862,26 @@ export class PostgresDocumentStore implements IDocumentStore {
           LIMIT $4
         `;
 
-        const rawResults = await this.query<RawSearchResult & { fts_score: number }>(
-          sql,
-          [query, normalizedLibrary, normalizedVersion, limit],
-        );
+      const rawResults = await this.query<RawSearchResult & { fts_score: number }>(sql, [
+        query,
+        normalizedLibrary,
+        normalizedVersion,
+        limit,
+      ]);
 
-        return rawResults.map((row, index) => {
-          const chunk = this.normalizeChunkRow({
-            ...row,
-            url: row.url || "",
-            title: row.title ?? null,
-            source_content_type: row.source_content_type ?? null,
-            content_type: row.content_type ?? null,
-          }) as DbPageChunk;
-          return Object.assign(chunk, {
-            score: row.fts_score,
-            fts_rank: index + 1,
-          });
+      return rawResults.map((row, index) => {
+        const chunk = this.normalizeChunkRow({
+          ...row,
+          url: row.url || "",
+          title: row.title ?? null,
+          source_content_type: row.source_content_type ?? null,
+          content_type: row.content_type ?? null,
+        }) as DbPageChunk;
+        return Object.assign(chunk, {
+          score: row.fts_score,
+          fts_rank: index + 1,
         });
-      }
+      });
     } catch (error) {
       throw new ConnectionError(
         `Failed to find documents by content with query "${query}"`,

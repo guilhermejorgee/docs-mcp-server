@@ -1,7 +1,6 @@
 # PostgreSQL Backend
 
-By default, Docs MCP Server stores its index in a local **SQLite** database. For production or
-multi-instance deployments you can switch to **PostgreSQL**, which provides:
+**PostgreSQL** is the required backend for Docs MCP Server, providing:
 
 - Concurrent write access from multiple server processes
 - Standard managed-database tooling (backups, monitoring, connection pooling)
@@ -87,7 +86,7 @@ db:
 
 | Config key | Environment variable | Default | Description |
 |---|---|---|---|
-| `db.backend` | `DOCS_MCP_BACKEND` | `sqlite` | `sqlite` or `postgresql` |
+| `db.backend` | `DOCS_MCP_BACKEND` | `postgresql` | `postgresql` |
 | `db.postgresql.connectionString` | `DATABASE_URL` | _(empty)_ | Full PostgreSQL connection string |
 | `db.postgresql.poolSize` | `DOCS_MCP_DB_POSTGRESQL_POOL_SIZE` | `10` | Max connections in pool |
 | `db.postgresql.idleTimeoutMs` | `DOCS_MCP_DB_POSTGRESQL_IDLE_TIMEOUT_MS` | `30000` | Idle connection timeout |
@@ -112,8 +111,7 @@ The PostgreSQL backend defaults to a **multilingual, language-agnostic** FTS con
 - `simple` dictionary (no language-specific stemming)
 - `unaccent` extension (normalises accented characters: `ã→a`, `ç→c`, etc.)
 
-This works correctly for both Portuguese and English content. The SQLite backend uses
-Porter stemming (`unicode61 porter`), which is English-only and degrades Portuguese search quality.
+This works correctly for both Portuguese and English content.
 
 ### Optional: bilingual stemming
 
@@ -126,19 +124,6 @@ search:
 
 This indexes each document with two tsvectors (one per language), applying the correct stemmer
 for each. The index size doubles, but prefix search and stemming quality improve for both languages.
-
----
-
-## SQLite vs PostgreSQL: When to Choose
-
-| Scenario | Recommended backend |
-|---|---|
-| Local development, single user | SQLite (default) |
-| Production, single process | SQLite is fine |
-| Multiple server processes (horizontal scale) | PostgreSQL |
-| Managed deployment (Docker Compose, K8s) | PostgreSQL |
-| Shared team index | PostgreSQL |
-| Embedded / minimal dependencies | SQLite |
 
 ---
 
@@ -183,19 +168,6 @@ indexing jobs, you may also place [pgBouncer](https://www.pgbouncer.org/) or a m
 (e.g., Supabase's PgBouncer, Neon's connection pooler) in front of PostgreSQL.
 
 The server's internal pool should be sized to match what your external pooler allows per process.
-
----
-
-## Data Migration from SQLite
-
-There is currently no automated migration path from SQLite to PostgreSQL. For a fresh PostgreSQL
-deployment, re-index your documentation from source:
-
-```bash
-# Example: re-index React docs
-DOCS_MCP_BACKEND=postgresql DATABASE_URL=... \
-  npx @arabold/docs-mcp-server@latest scrape react https://react.dev/reference/react
-```
 
 ---
 

@@ -58,6 +58,20 @@ export interface ScrapeToolOptions {
      * @default true
      */
     clean?: boolean;
+    /**
+     * Chunking strategy to use when splitting document content.
+     * - 'default': Use the standard fixed-size text splitter.
+     * - 'semantic': Use semantic chunking via embedding similarity (requires an embedding model).
+     * @default 'default'
+     */
+    chunkingStrategy?: "default" | "semantic";
+    /**
+     * Cosine similarity threshold for semantic chunking boundary detection.
+     * Values closer to 0 produce fewer, larger chunks; closer to 1 produces more, smaller chunks.
+     * When undefined, an adaptive threshold (25th percentile) is computed automatically.
+     * Range: [0, 1]
+     */
+    semanticThreshold?: number;
   };
   /** If false, returns jobId immediately without waiting. Defaults to true. */
   waitForCompletion?: boolean;
@@ -151,6 +165,8 @@ export class ScrapeTool {
       excludePatterns: scraperOptions?.excludePatterns,
       headers: scraperOptions?.headers, // <-- propagate headers
       clean: scraperOptions?.clean, // <-- propagate clean option
+      chunkingStrategy: scraperOptions?.chunkingStrategy ?? "default",
+      semanticThreshold: scraperOptions?.semanticThreshold,
     });
 
     // Conditionally wait for completion

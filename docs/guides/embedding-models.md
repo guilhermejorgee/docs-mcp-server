@@ -1,6 +1,8 @@
 # Embedding Model Configuration
 
-This guide details how to configure the embedding models used for vector search. You can set the embedding model using the `app.embeddingModel` configuration key, the `DOCS_MCP_EMBEDDING_MODEL` environment variable, or the `--embedding-model` CLI flag.
+This guide details how to configure the embedding models used for semantic chunking during indexing. You can set the embedding model using the `app.embeddingModel` configuration key, the `DOCS_MCP_EMBEDDING_MODEL` environment variable, or the `--embedding-model` CLI flag.
+
+> **Note:** Embeddings are used transiently during indexing for semantic chunking. They are not stored and do not affect search ranking. Search is powered by PostgreSQL full-text search (FTS).
 
 ## Model Selection
 
@@ -113,3 +115,8 @@ AZURE_OPENAI_API_VERSION="2024-02-01" \
 DOCS_MCP_EMBEDDING_MODEL="microsoft:text-embedding-ada-002" \
 npx @arabold/docs-mcp-server@latest
 ```
+
+## See Also
+
+- **[Semantic Chunking](../concepts/semantic-chunking.md)**: How embeddings are used during indexing to detect topic boundaries.
+- **[Configuration Reference](../setup/configuration.md)**: `chunkingStrategy` and `splitter` settings.

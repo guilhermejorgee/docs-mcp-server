@@ -30,7 +30,7 @@ docs-mcp-server/
 │   │   ├── TextDocumentSplitter.ts      # Line-based text/code
 │   │   ├── splitters/          # ContentSplitter implementations (legacy)
 │   │   └── treesitter/         # Tree-sitter AST-based code splitting
-│   ├── store/                  # SQLite persistence + hybrid search
+    ├── store/                  # PostgreSQL persistence + FTS search
 │   │   ├── assembly/           # Search result reassembly (parent/sibling chunks)
 │   │   ├── embeddings/         # EmbeddingConfig, EmbeddingFactory, providers
 │   │   └── trpc/               # tRPC interfaces for store procedures
@@ -78,7 +78,7 @@ docs-mcp-server/
 
 ### src/store/ — Data Layer
 
-**Purpose:** SQLite CRUD, hybrid vector+FTS search, embedding management, migration runner.
+**Purpose:** PostgreSQL CRUD, FTS search, embedding management, migration runner.
 **Key files:** `DocumentStore.ts` (primary), `DocumentManagementService.ts`, `DocumentRetrieverService.ts`, `applyMigrations.ts`
 
 ### src/scraper/ — Content Acquisition
@@ -95,7 +95,7 @@ docs-mcp-server/
 
 **Search functionality:**
 - Business logic: `src/tools/SearchTool.ts`
-- Store query: `src/store/DocumentRetrieverService.ts` (hybrid RRF search)
+- Store query: `src/store/DocumentRetrieverService.ts` (FTS search + context assembly)
 - Result assembly: `src/store/assembly/`
 - MCP exposure: `src/mcp/mcpServer.ts`
 

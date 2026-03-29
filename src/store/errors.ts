@@ -101,3 +101,13 @@ export class MissingCredentialsError extends StoreError {
     );
   }
 }
+
+/**
+ * Error thrown when a feature requires configuration that is absent or invalid.
+ * For example, requesting semantic chunking without an embedding model configured.
+ */
+export class ConfigurationError extends StoreError {
+  constructor(message: string) {
+    super(message);
+  }
+}

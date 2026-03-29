@@ -4,7 +4,7 @@
 
 **Unit/Integration:** Vitest 3 (`vitest`)
 **E2E:** Vitest 3 (same runner, separate suite)
-**HTTP mocking:** msw 2 (service workers) + nock 14 (HTTP interceptors)
+**HTTP mocking:** msw 2 (service workers)
 **Filesystem mocking:** memfs 4
 **Search quality eval:** promptfoo 0.120 (LLM-as-judge evaluation)
 
@@ -72,7 +72,7 @@ describe("SearchTool", () => {
 
 ### Integration Tests
 
-**Approach:** Real SQLite in-memory DB, mock HTTP calls with nock/msw.
+**Approach:** Real PostgreSQL via testcontainers (pgvector/pgvector:pg16 Docker image), mock HTTP calls with msw.
 **Location:** `src/**/*.test.ts` (same suite, uses real implementations)
 
 ### E2E Tests

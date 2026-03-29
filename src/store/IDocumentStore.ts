@@ -1,3 +1,4 @@
+import type { Embeddings } from "@langchain/core/embeddings";
 import type { ScrapeResult, ScraperOptions } from "../scraper/types";
 import type { EmbeddingModelConfig } from "./embeddings/EmbeddingConfig";
 import type {
@@ -12,10 +13,11 @@ import type {
 
 /**
  * Public interface for a document store backend.
- * Implemented by SqliteDocumentStore and PostgresDocumentStore.
+ * Implemented by PostgresDocumentStore.
  */
 export interface IDocumentStore {
   getActiveEmbeddingConfig(): EmbeddingModelConfig | null;
+  getEmbeddingModel(): Embeddings | null;
 
   initialize(): Promise<void>;
   shutdown(): Promise<void>;

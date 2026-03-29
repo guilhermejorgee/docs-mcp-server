@@ -12,7 +12,8 @@
 
 import nock from "nock";
 import { vol } from "memfs";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import os from "node:os";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PipelineManager } from "../src/pipeline/PipelineManager";
 import { ScraperService } from "../src/scraper/ScraperService";
 import type { ScraperOptions } from "../src/scraper/types";
@@ -21,9 +22,17 @@ import { EventBusService } from "../src/events";
 import type { StoreSearchResult } from "../src/store/types";
 import { ScraperRegistry } from "../src/scraper";
 import { loadConfig, type AppConfig } from "../src/utils/config";
+import { createPgContainer } from "./pg-container";
 
 // Mock file system for file-based tests
 vi.mock("node:fs/promises", () => ({ default: vol.promises }));
+
+// Deactivate nock immediately to prevent it from interfering with testcontainers
+// Docker socket detection via MSW + nock double-patching causes Docker requests
+// to be routed to TCP localhost:80 instead of the Unix socket.
+nock.restore();
+
+const container = createPgContainer();
 
 describe("Refresh Pipeline E2E Tests", () => {
   let docService: DocumentManagementService;
@@ -31,16 +40,26 @@ describe("Refresh Pipeline E2E Tests", () => {
   let pipelineManager: PipelineManager;
   let appConfig: AppConfig;
 
+  beforeAll(async () => {
+    await container.start();
+  }, 120_000);
+
+  afterAll(async () => {
+    await container.stop();
+  });
+
   const TEST_BASE_URL = "http://test-docs.example.com";
   const TEST_LIBRARY = "test-lib";
   const TEST_VERSION = "1.0.0";
 
   beforeEach(async () => {
+    await container.truncate();
+
     appConfig = loadConfig();
-    appConfig.app.storePath = ":memory:";
     appConfig.app.embeddingModel = ""; // disable embeddings for refresh e2e
-    // Initialize in-memory store and services
-    // DocumentManagementService creates its own DocumentStore internally
+    appConfig.app.storePath = os.tmpdir(); // required by DocumentManagementService
+    appConfig.db.postgresql.connectionString = container.connectionString;
+    // Initialize store and services
     const eventBus = new EventBusService();
     docService = new DocumentManagementService(eventBus, appConfig);
     await docService.initialize();
@@ -53,7 +72,8 @@ describe("Refresh Pipeline E2E Tests", () => {
     });
     await pipelineManager.start();
 
-    // Clear any previous nock mocks
+    // Activate nock for HTTP mocking within this test
+    if (!nock.isActive()) nock.activate();
     nock.cleanAll();
   });
 
@@ -62,6 +82,7 @@ describe("Refresh Pipeline E2E Tests", () => {
     await pipelineManager.stop();
     await docService.shutdown();
     nock.cleanAll();
+    nock.restore(); // Deactivate nock after each test
     vol.reset();
   });
 

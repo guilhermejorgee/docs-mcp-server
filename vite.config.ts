@@ -57,9 +57,7 @@ export default defineConfig({
         // Explicitly externalize potentially problematic packages if needed
         'fingerprint-generator',
         'header-generator',
-        'better-sqlite3', // Often needs to be external due to native bindings
         'playwright', // Playwright should definitely be external
-        'sqlite-vec', // Likely involves native bindings
       ],
       
       output: {
@@ -86,5 +84,8 @@ export default defineConfig({
     exclude: ["test/**/*-live-e2e.test.ts"],
     // Use the e2e setup which includes both logger mock and mock server
     setupFiles: ["test/setup-env.ts", "test/setup-e2e.ts"],
+    // Start a single shared PostgreSQL container before all workers to avoid
+    // spinning up 8+ simultaneous containers on memory-constrained hosts.
+    globalSetup: ["test/global-pg-setup.ts"],
   },
 });

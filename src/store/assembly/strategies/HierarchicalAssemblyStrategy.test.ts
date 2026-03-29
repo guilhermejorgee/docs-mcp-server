@@ -1,13 +1,24 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createPgContainer } from "../../../../test/pg-container";
 import { type AppConfig, loadConfig } from "../../../utils/config";
-import { DocumentStore } from "../../DocumentStore";
+import { PostgresDocumentStore } from "../../PostgresDocumentStore";
 import type { DbChunkMetadata, DbPageChunk } from "../../types";
 import { HierarchicalAssemblyStrategy } from "./HierarchicalAssemblyStrategy";
 
+const container = createPgContainer();
+
 describe("HierarchicalAssemblyStrategy", () => {
   let strategy: HierarchicalAssemblyStrategy;
-  let documentStore: DocumentStore;
+  let documentStore: PostgresDocumentStore;
   let appConfig: AppConfig;
+
+  beforeAll(async () => {
+    await container.start();
+  }, 120_000);
+
+  afterAll(async () => {
+    await container.stop();
+  });
 
   beforeEach(async () => {
     appConfig = loadConfig();
@@ -15,8 +26,8 @@ describe("HierarchicalAssemblyStrategy", () => {
     // Disable embeddings for this strategy test
     appConfig.app.embeddingModel = "";
 
-    // Use real DocumentStore initialization but disable embeddings (pass null)
-    documentStore = new DocumentStore(":memory:", appConfig);
+    await container.truncate();
+    documentStore = new PostgresDocumentStore(container.connectionString, appConfig);
     await documentStore.initialize();
     strategy = new HierarchicalAssemblyStrategy(appConfig);
   });
@@ -28,6 +39,13 @@ describe("HierarchicalAssemblyStrategy", () => {
   });
 
   describe("canHandle", () => {
+    beforeEach(() => {
+      // canHandle tests don't need a DB, create strategy directly
+      if (!strategy) {
+        strategy = new HierarchicalAssemblyStrategy(loadConfig());
+      }
+    });
+
     it("should handle source code MIME types", () => {
       expect(strategy.canHandle("text/javascript")).toBe(true);
       expect(strategy.canHandle("text/typescript")).toBe(true);
@@ -262,218 +280,118 @@ describe("HierarchicalAssemblyStrategy", () => {
     });
 
     it("should handle multiple matches with selective subtree reassembly", async () => {
-      const versionId = await documentStore.resolveVersionId("test-multi", "1.0");
+      // Insert all chunks via public API
+      await documentStore.addDocuments("test-multi", "1.0", 0, {
+        url: "UserService.ts",
+        title: "User Service TypeScript File",
+        sourceContentType: "text/typescript",
+        contentType: "text/typescript",
+        textContent: "",
+        chunks: [
+          {
+            content: "class UserService {",
+            section: { path: ["UserService", "opening"], level: 1 },
+            types: ["code"],
+          },
+          {
+            content: "  getUser(id) { return db.find(id); }",
+            section: { path: ["UserService", "opening", "getUser"], level: 2 },
+            types: ["code"],
+          },
+          {
+            content: "  createUser(data) { return db.create(data); }",
+            section: { path: ["UserService", "opening", "createUser"], level: 2 },
+            types: ["code"],
+          },
+          {
+            content: "  deleteUser(id) { return db.delete(id); }",
+            section: { path: ["UserService", "opening", "deleteUser"], level: 2 },
+            types: ["code"],
+          },
+        ],
+        links: [],
+        errors: [],
+      });
 
-      expect(versionId).toBeGreaterThan(0);
-
-      // Create a page first
-      // @ts-expect-error Accessing private property for testing
-      const pageResult = documentStore.statements.insertPage.run(
-        versionId,
+      // Retrieve the inserted chunks to get their real IDs
+      const allChunks = await documentStore.findChunksByUrl(
+        "test-multi",
+        "1.0",
         "UserService.ts",
-        "User Service TypeScript File",
-        null,
-        null,
-        "text/typescript",
-        "text/typescript",
-        0, // depth
       );
-      const pageId = pageResult.lastInsertRowid as number;
+      expect(allChunks.length).toBe(4);
 
-      // Class with multiple methods - only some will be matched
-      // @ts-expect-error Accessing private property for testing
-      const _classOpenResult = documentStore.statements.insertDocument.run(
-        pageId,
-        "class UserService {",
-        JSON.stringify({
-          path: ["UserService", "opening"],
-          level: 1,
-        } satisfies DbChunkMetadata),
-        0,
-      );
-
-      // Method 1: getUser (will be matched)
-      // @ts-expect-error Accessing private property for testing
-      const getUserResult = documentStore.statements.insertDocument.run(
-        pageId,
-        "  getUser(id) { return db.find(id); }",
-        JSON.stringify({
-          path: ["UserService", "opening", "getUser"],
-          level: 2,
-        } satisfies DbChunkMetadata),
-        1,
-      );
-      const getUserId = getUserResult.lastInsertRowid.toString();
-
-      // Method 2: createUser (will NOT be matched)
-      // @ts-expect-error Accessing private property for testing
-      documentStore.statements.insertDocument.run(
-        pageId,
-        "  createUser(data) { return db.create(data); }",
-        JSON.stringify({
-          path: ["UserService", "opening", "createUser"],
-          level: 2,
-        } satisfies DbChunkMetadata),
-        2,
-      );
-
-      // Method 3: deleteUser (will be matched)
-      // @ts-expect-error Accessing private property for testing
-      const deleteUserResult = documentStore.statements.insertDocument.run(
-        pageId,
-        "  deleteUser(id) { return db.delete(id); }",
-        JSON.stringify({
-          path: ["UserService", "opening", "deleteUser"],
-          level: 2,
-        } satisfies DbChunkMetadata),
-        3,
-      );
-      const deleteUserId = deleteUserResult.lastInsertRowid.toString();
-
-      const inputDocs: DbPageChunk[] = [
-        {
-          id: getUserId,
-          page_id: pageId,
-          url: "UserService.ts",
-          title: "User Service TypeScript File",
-          content_type: "text/typescript",
-          content: "  getUser(id) { return db.find(id); }",
-          metadata: {
-            path: ["UserService", "getUser"],
-            level: 2,
-          },
-          sort_order: 1,
-          embedding: null,
-          created_at: new Date().toISOString(),
-          score: null,
-        },
-        {
-          id: deleteUserId,
-          page_id: pageId,
-          url: "UserService.ts",
-          title: "User Service TypeScript File",
-          content_type: "text/typescript",
-          content: "  deleteUser(id) { return db.delete(id); }",
-          metadata: {
-            path: ["UserService", "deleteUser"],
-            level: 2,
-          },
-          sort_order: 3,
-          embedding: null,
-          created_at: new Date().toISOString(),
-          score: null,
-        },
-      ];
+      // Simulate search matching only getUser and deleteUser
+      const getUserChunk = allChunks.find((c) => c.content.includes("getUser"))!;
+      const deleteUserChunk = allChunks.find((c) => c.content.includes("deleteUser"))!;
+      const inputDocs = [getUserChunk, deleteUserChunk];
 
       const result = await strategy.selectChunks(
         "test-multi",
         "1.0",
-        inputDocs as DbPageChunk[],
+        inputDocs,
         documentStore,
       );
 
       const content = result.map((doc) => doc.content);
 
       // Should include both matched methods
-      expect(content).toContain("  getUser(id) { return db.find(id); }");
-      expect(content).toContain("  deleteUser(id) { return db.delete(id); }");
+      expect(content.some((c) => c.includes("getUser"))).toBe(true);
+      expect(content.some((c) => c.includes("deleteUser"))).toBe(true);
 
       // Should NOT include the unmatched createUser method
       expect(content.some((c) => c.includes("createUser"))).toBe(false);
     });
 
     it("should handle multiple matches across different documents", async () => {
-      const versionId = await documentStore.resolveVersionId("test-cross-doc", "1.0");
+      // Insert two separate pages in the same version
+      await documentStore.addDocuments("test-cross-doc", "1.0", 0, {
+        url: "FileA.ts",
+        title: "File A TypeScript File",
+        sourceContentType: "text/typescript",
+        contentType: "text/typescript",
+        textContent: "",
+        chunks: [
+          {
+            content: "  methodAlpha() { return 'Alpha'; }",
+            section: { path: ["FileA", "methodAlpha"], level: 2 },
+            types: ["code"],
+          },
+        ],
+        links: [],
+        errors: [],
+      });
+      await documentStore.addDocuments("test-cross-doc", "1.0", 0, {
+        url: "FileB.ts",
+        title: "File B TypeScript File",
+        sourceContentType: "text/typescript",
+        contentType: "text/typescript",
+        textContent: "",
+        chunks: [
+          {
+            content: "  methodBeta() { return 'Beta'; }",
+            section: { path: ["FileB", "methodBeta"], level: 2 },
+            types: ["code"],
+          },
+        ],
+        links: [],
+        errors: [],
+      });
 
-      expect(versionId).toBeGreaterThan(0);
-
-      // Create pages first
-      // @ts-expect-error Accessing private property for testing
-      const pageAResult = documentStore.statements.insertPage.run(
-        versionId,
+      const chunksA = await documentStore.findChunksByUrl(
+        "test-cross-doc",
+        "1.0",
         "FileA.ts",
-        "File A TypeScript File",
-        null,
-        null,
-        "text/typescript",
-        "text/typescript",
-        0, // depth
       );
-      const pageAId = pageAResult.lastInsertRowid as number;
-
-      // @ts-expect-error Accessing private property for testing
-      const pageBResult = documentStore.statements.insertPage.run(
-        versionId,
+      const chunksB = await documentStore.findChunksByUrl(
+        "test-cross-doc",
+        "1.0",
         "FileB.ts",
-        "File B TypeScript File",
-        null,
-        null,
-        "text/typescript",
-        "text/typescript",
-        0, // depth
       );
-      const pageBId = pageBResult.lastInsertRowid as number;
+      expect(chunksA.length).toBe(1);
+      expect(chunksB.length).toBe(1);
 
-      // File A
-      // @ts-expect-error Accessing private property for testing
-      const methodAResult = documentStore.statements.insertDocument.run(
-        pageAId,
-        "  methodAlpha() { return 'Alpha'; }",
-        JSON.stringify({
-          path: ["FileA", "methodAlpha"],
-          level: 2,
-        } satisfies DbChunkMetadata),
-        0,
-      );
-      const methodAId = methodAResult.lastInsertRowid.toString();
-
-      // File B
-      // @ts-expect-error Accessing private property for testing
-      const methodBResult = documentStore.statements.insertDocument.run(
-        pageBId,
-        "  methodBeta() { return 'Beta'; }",
-        JSON.stringify({
-          path: ["FileB", "methodBeta"],
-          level: 2,
-        } satisfies DbChunkMetadata),
-        0,
-      );
-      const methodBId = methodBResult.lastInsertRowid.toString();
-
-      const inputDocs: DbPageChunk[] = [
-        {
-          id: methodAId,
-          page_id: pageAId,
-          url: "FileA.ts",
-          title: "File A TypeScript File",
-          content_type: "text/typescript",
-          content: "  methodAlpha() { return 'Alpha'; }",
-          metadata: {
-            path: ["FileA", "methodAlpha"],
-            level: 2,
-          },
-          sort_order: 0,
-          embedding: null,
-          created_at: new Date().toISOString(),
-          score: null,
-        },
-        {
-          id: methodBId,
-          page_id: pageBId,
-          url: "FileB.ts",
-          title: "File B TypeScript File",
-          content_type: "text/typescript",
-          content: "  methodBeta() { return 'Beta'; }",
-          metadata: {
-            path: ["FileB", "methodBeta"],
-            level: 2,
-          },
-          sort_order: 0,
-          embedding: null,
-          created_at: new Date().toISOString(),
-          score: null,
-        },
-      ];
+      const inputDocs = [chunksA[0], chunksB[0]];
 
       const result = await strategy.selectChunks(
         "test-cross-doc",

@@ -16,7 +16,7 @@ npx @arabold/docs-mcp-server@latest
 
 This runs the server on port 6280 by default. Open **[http://localhost:6280](http://localhost:6280)** to access the web interface.
 
-**Optional:** Prefix with `OPENAI_API_KEY="your-openai-api-key"` to enable vector search for improved results.
+**Optional:** Prefix with `OPENAI_API_KEY="your-openai-api-key"` to enable semantic chunking for better indexing quality.
 
 ### Option 2: Docker
 
@@ -33,7 +33,7 @@ docker run --rm \
 
 **Configuration:** The server writes its configuration to `/config/docs-mcp-server/config.yaml`. Mounting the `/config` volume ensures your settings persist across restarts.
 
-**Optional:** Add `-e OPENAI_API_KEY="your-openai-api-key"` to enable vector search for improved results.
+**Optional:** Add `-e OPENAI_API_KEY="your-openai-api-key"` to enable semantic chunking for better indexing quality.
 
 ### Configure Your Client
 
@@ -79,7 +79,7 @@ Add this to your MCP settings (VS Code, Claude Desktop, etc.):
 }
 ```
 
-**With Vector Search (API Key):**
+**With Semantic Chunking (API Key):**
 
 ```json
 {

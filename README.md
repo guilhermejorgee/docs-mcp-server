@@ -113,7 +113,7 @@ docker run --rm \
 
 ### 🧠 Configure Embedding Model (Recommended)
 
-Using an embedding model is **optional** but dramatically improves search quality by enabling semantic vector search.
+Using an embedding model is **optional** but improves indexing quality by enabling semantic chunking — splitting content at topic boundaries rather than structural ones.
 
 **Example: Enable OpenAI Embeddings**
 
@@ -123,9 +123,9 @@ OPENAI_API_KEY="sk-proj-..." npx @arabold/docs-mcp-server@latest
 
 See **[Embedding Models](docs/guides/embedding-models.md)** for configuring **Ollama**, **Gemini**, **Azure**, and others.
 
-### 🐘 PostgreSQL Backend (Optional)
+### 🐘 PostgreSQL Backend
 
-By default the server uses **SQLite** (zero configuration, single-process). For multi-instance or production deployments, switch to **PostgreSQL**:
+The server requires **PostgreSQL** (version 14 or newer) with the [pgvector](https://github.com/pgvector/pgvector) extension. Configure the database connection:
 
 ```bash
 DATABASE_URL=postgresql://user:pass@host:5432/mydb \

@@ -51,6 +51,9 @@ const mockStore = {
   // Library management methods
   getLibrary: vi.fn(),
   deleteLibrary: vi.fn(),
+  // Embedding
+  getActiveEmbeddingConfig: vi.fn().mockReturnValue(null),
+  getEmbeddingModel: vi.fn().mockReturnValue(null),
 };
 
 // Mock the DocumentStoreFactory module so DocumentManagementService gets the mock store
@@ -1061,4 +1064,78 @@ describe("DocumentManagementService", () => {
       });
     });
   }); // Closing brace for describe("Core Functionality", ...)
+
+  // -------------------------------------------------------------------------
+  // T11: addScrapeResult semantic chunking integration tests
+  // -------------------------------------------------------------------------
+  describe("addScrapeResult — semantic chunking", () => {
+    const baseChunks = [
+      {
+        content: "First chunk.",
+        types: ["text" as const],
+        section: { level: 0, path: [] },
+      },
+      {
+        content: "Second chunk.",
+        types: ["text" as const],
+        section: { level: 0, path: [] },
+      },
+    ];
+    const baseScrapeResult = {
+      url: "https://example.com/docs",
+      title: "Docs",
+      chunks: baseChunks,
+      contentType: "text/html",
+      sourceContentType: "text/html",
+    };
+
+    it("falls through to store.addDocuments with default strategy", async () => {
+      mockStore.getEmbeddingModel.mockReturnValue(null);
+      await docService.initialize();
+      await docService.addScrapeResult("mylib", "1.0.0", 0, baseScrapeResult as any);
+      expect(mockStore.addDocuments).toHaveBeenCalledWith(
+        "mylib",
+        "1.0.0",
+        0,
+        baseScrapeResult,
+      );
+    });
+
+    it("throws ConfigurationError when semantic requested but no embeddings", async () => {
+      mockStore.getEmbeddingModel.mockReturnValue(null);
+      await docService.initialize();
+      await expect(
+        docService.addScrapeResult("mylib", "1.0.0", 0, baseScrapeResult as any, {
+          chunkingStrategy: "semantic",
+        }),
+      ).rejects.toThrow("Semantic chunking requires an embedding model");
+    });
+
+    it("uses SemanticChunkingStrategy when chunkingStrategy is 'semantic'", async () => {
+      const mockEmbeddings = {
+        embedDocuments: vi.fn(async (texts: string[]) => texts.map(() => [1, 0, 0])),
+        embedQuery: vi.fn(async () => [1, 0, 0]),
+      };
+      mockStore.getEmbeddingModel.mockReturnValue(mockEmbeddings);
+      await docService.initialize();
+
+      // Multiple sentences so splitText actually calls embedDocuments
+      const multiSentenceChunks = [
+        {
+          content: "First sentence. Second sentence. Third sentence.",
+          types: ["text" as const],
+          section: { level: 0, path: [] },
+        },
+      ];
+      await docService.addScrapeResult(
+        "mylib",
+        "1.0.0",
+        0,
+        { ...baseScrapeResult, chunks: multiSentenceChunks } as any,
+        { chunkingStrategy: "semantic" },
+      );
+      expect(mockStore.addDocuments).toHaveBeenCalled();
+      expect(mockEmbeddings.embedDocuments).toHaveBeenCalled();
+    });
+  });
 }); // Closing brace for the main describe block

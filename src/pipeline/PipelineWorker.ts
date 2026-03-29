@@ -115,6 +115,7 @@ export class PipelineWorker {
                 version,
                 progress.depth,
                 progress.result,
+                scraperOptions,
               );
               logger.debug(`[${jobId}] Stored processed content: ${progress.currentUrl}`);
             } catch (docError) {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type AppConfig, loadConfig } from "../../../utils/config";
-import type { DocumentStore } from "../../DocumentStore";
+import type { IDocumentStore } from "../../IDocumentStore";
 import type { DbPageChunk } from "../../types";
 import { MarkdownAssemblyStrategy } from "./MarkdownAssemblyStrategy";
 
@@ -12,7 +12,7 @@ const createMockDocumentStore = () =>
     findSubsequentSiblingChunks: vi.fn().mockResolvedValue([]),
     findChildChunks: vi.fn().mockResolvedValue([]),
     findChunksByIds: vi.fn().mockResolvedValue([]),
-  }) as Partial<DocumentStore> as DocumentStore;
+  }) as Partial<IDocumentStore> as IDocumentStore;
 
 // Test fixtures - creating a "document universe"
 const createDocumentUniverse = () => {
@@ -113,7 +113,7 @@ const createDocumentUniverse = () => {
 
 describe("MarkdownAssemblyStrategy", () => {
   let strategy: MarkdownAssemblyStrategy;
-  let mockStore: DocumentStore;
+  let mockStore: IDocumentStore;
   let config: AppConfig;
   let universe: ReturnType<typeof createDocumentUniverse>;
 
@@ -126,37 +126,41 @@ describe("MarkdownAssemblyStrategy", () => {
 
   // Helper function for setting up comprehensive mock store responses
   const setupFullMockStore = () => {
-    vi.mocked(mockStore.findParentChunk).mockImplementation(async (_lib, _ver, id) => {
-      if (id === "target") return universe.parent;
-      return null;
-    });
+    vi.mocked(mockStore.findParentChunk).mockImplementation(
+      async (_lib: string, _ver: string, id: string) => {
+        if (id === "target") return universe.parent;
+        return null;
+      },
+    );
 
     vi.mocked(mockStore.findPrecedingSiblingChunks).mockImplementation(
-      async (_lib, _ver, id, limit) => {
+      async (_lib: string, _ver: string, id: string, limit: number) => {
         if (id === "target") return [universe.prev1].slice(0, limit); // Only prev1, respecting limit of 1
         return [];
       },
     );
 
     vi.mocked(mockStore.findSubsequentSiblingChunks).mockImplementation(
-      async (_lib, _ver, id, limit) => {
+      async (_lib: string, _ver: string, id: string, limit: number) => {
         if (id === "target") return [universe.next1, universe.next2].slice(0, limit); // Only next1 & next2, respecting limit of 2
         return [];
       },
     );
 
     vi.mocked(mockStore.findChildChunks).mockImplementation(
-      async (_lib, _ver, id, limit) => {
+      async (_lib: string, _ver: string, id: string, limit: number) => {
         if (id === "target")
           return [universe.child1, universe.child2, universe.child3].slice(0, limit); // Only first 3 children, respecting limit of 3
         return [];
       },
     );
 
-    vi.mocked(mockStore.findChunksByIds).mockImplementation(async (_lib, _ver, ids) => {
-      const idSet = new Set(ids);
-      return Object.values(universe).filter((doc) => idSet.has(doc.id as string));
-    });
+    vi.mocked(mockStore.findChunksByIds).mockImplementation(
+      async (_lib: string, _ver: string, ids: string[]) => {
+        const idSet = new Set(ids);
+        return Object.values(universe).filter((doc) => idSet.has(doc.id as string));
+      },
+    );
   };
 
   describe("canHandle", () => {
@@ -368,7 +372,7 @@ describe("MarkdownAssemblyStrategy", () => {
       it("chunks from same document", async () => {
         // Setup: both child1 and child2 relate to target
         vi.mocked(mockStore.findParentChunk).mockImplementation(
-          async (_lib, _ver, id) => {
+          async (_lib: string, _ver: string, id: string) => {
             if (id === "child1" || id === "child2") return universe.target;
             return null;
           },
@@ -399,13 +403,13 @@ describe("MarkdownAssemblyStrategy", () => {
       it("chunks with overlapping relations (deduplication)", async () => {
         // Setup: target and parent both relate to each other
         vi.mocked(mockStore.findParentChunk).mockImplementation(
-          async (_lib, _ver, id) => {
+          async (_lib: string, _ver: string, id: string) => {
             if (id === "target") return universe.parent;
             return null;
           },
         );
         vi.mocked(mockStore.findChildChunks).mockImplementation(
-          async (_lib, _ver, id, _limit) => {
+          async (_lib: string, _ver: string, id: string, _limit: number) => {
             if (id === "parent") return [universe.target];
             return [];
           },

@@ -2,12 +2,12 @@
 
 ## System Overview
 
-The Documentation MCP Server indexes documentation from web sources, local files, and package registries, making it searchable via the Model Context Protocol (MCP). The system processes content into vector embeddings and provides search capabilities to AI coding assistants.
+The Documentation MCP Server indexes documentation from web sources, local files, and package registries, making it searchable via the Model Context Protocol (MCP). The system processes and indexes documentation content, making it searchable via full-text search to AI coding assistants.
 
 ### Core Functions
 
 - Documentation scraping from web, local files, npm/PyPI registries
-- Semantic search using vector embeddings (OpenAI, Google, Azure, AWS providers)
+- Optional semantic chunking using vector embeddings for higher-quality content splitting during indexing
 - Version-specific documentation queries
 - Asynchronous job processing with recovery
 - Multiple access interfaces: CLI, MCP protocol, web UI
@@ -28,7 +28,7 @@ Protocol selection is automatic - stdio transport for AI tools (no TTY), HTTP tr
 - Vitest for testing
 - HTMX, AlpineJS, TailwindCSS for web interface
 - LangChain.js for embeddings, Playwright for scraping
-- SQLite with schema migrations
+- PostgreSQL with schema migrations (pgvector extension + tsvector FTS)
 
 ## Configuration System
 
@@ -114,7 +114,7 @@ graph TD
         subgraph "Content Processing"
             SCRAPER[Scraper]
             SPLITTER[Splitter]
-            EMBEDDER[Embeddings]
+            EMBEDDER[SemanticChunker (optional)]
         end
 
         %% Command Flow
@@ -130,7 +130,7 @@ graph TD
         EB -.->|Real-time Updates| CLI & WEB & MCP
 
         %% Data Flow
-        EMBEDDER -->|Stores Content| DOC
+        EMBEDDER -->|chunks only (embeddings discarded)| DOC
     end
 ```
 
@@ -227,7 +227,7 @@ Business logic resides in the tools layer to enable code reuse across interfaces
 The tools layer includes:
 
 - Document scraping with configuration persistence
-- Semantic search across indexed content
+- Full-text search across indexed content
 - Library and version management
 - Job lifecycle management (status, progress, cancellation)
 - URL fetching and markdown conversion
@@ -257,14 +257,14 @@ Content processing follows a modular strategy-pipeline-splitter architecture:
 3. **Processing Pipelines**: Transform content using middleware chains and content-type-specific logic
 4. **Document Processing**: Extract text from binary documents (PDF, Office, EPUB, etc.) using Kreuzberg
 5. **Document Splitters**: Segment content into semantic chunks preserving document structure
-6. **Size Optimization**: Apply universal chunk sizing for optimal embedding generation
-7. **Embedders**: Generate vector embeddings using configured provider
+6. **Size Optimization**: Apply universal chunk sizing for optimal storage and retrieval
+7. **Semantic Chunking** (optional): Generate transient vector embeddings for higher-quality content splitting; embeddings are not stored
 
 The system uses a two-phase splitting approach: semantic splitting preserves document structure, followed by size optimization for embedding quality. See [Content Processing](docs/concepts/content-processing.md) for detailed processing flows.
 
 ### Storage Architecture
 
-SQLite database with normalized schema:
+PostgreSQL database with normalized schema:
 
 - `libraries`: Library metadata and organization
 - `versions`: Version tracking with indexing status and configuration
@@ -273,7 +273,7 @@ SQLite database with normalized schema:
 
 The `versions` table serves as the job state hub, storing progress, errors, and scraper configuration for reproducible re-indexing.
 
-DocumentManagementService handles CRUD operations and version resolution. DocumentRetrieverService provides hybrid search combining vector similarity and full-text search using Reciprocal Rank Fusion (RRF) with configurable weights. The search system implements dual-mode FTS query generation for improved recall (combining exact phrase and keyword matching) and uses an overfetch factor to retrieve more candidates before final ranking.
+DocumentManagementService handles CRUD operations and version resolution. DocumentRetrieverService provides full-text search using PostgreSQL `plainto_tsquery` with contextual hierarchy reassembly (parent/sibling chunks). Search is full-text only — no vector similarity or stored embeddings.
 
 ## Interface Implementations
 

@@ -85,10 +85,12 @@ export const DEFAULT_CONFIG = {
     vectorDimension: 1536,
   },
   db: {
-    backend: "sqlite" as "sqlite" | "postgresql",
+    backend: "postgresql" as "postgresql",
     postgresql: {
       connectionString: "",
-      poolSize: 10,
+      poolSize: 50,
+      //O poolSize ideal é aproximadamente: (número médio de queries por search) × (concorrência esperada) / (latência DB em segundos).
+      // Com 16 queries/search, 50 usuários simultâneos e 20ms por query: ~40 conexões. Pool de 50 tem folga razoável sem sobrecarregar o PostgreSQL.
       idleTimeoutMs: 30000,
       connectionTimeoutMs: 5000,
     },
@@ -239,7 +241,7 @@ export const AppConfigSchema = z.object({
     .default(DEFAULT_CONFIG.embeddings),
   db: z
     .object({
-      backend: z.enum(["sqlite", "postgresql"]).default(DEFAULT_CONFIG.db.backend),
+      backend: z.enum(["postgresql"]).default(DEFAULT_CONFIG.db.backend),
       postgresql: z
         .object({
           connectionString: z

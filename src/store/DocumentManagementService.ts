@@ -1,4 +1,4 @@
-import path from "node:path";
+import type { Embeddings } from "@langchain/core/embeddings";
 import Fuse from "fuse.js";
 import semver from "semver";
 import type { EventBusService } from "../events";
@@ -6,6 +6,7 @@ import { EventType } from "../events";
 import { PipelineFactory } from "../scraper/pipelines/PipelineFactory";
 import type { ContentPipeline } from "../scraper/pipelines/types";
 import type { ScrapeResult, ScraperOptions } from "../scraper/types";
+import { SemanticChunkingStrategy } from "../splitter/SemanticChunkingStrategy";
 import type { Chunk } from "../splitter/types";
 import { telemetry } from "../telemetry";
 import type { AppConfig } from "../utils/config";
@@ -15,6 +16,7 @@ import { DocumentRetrieverService } from "./DocumentRetrieverService";
 import { DocumentStoreFactory } from "./DocumentStoreFactory";
 import type { EmbeddingModelConfig } from "./embeddings/EmbeddingConfig";
 import {
+  ConfigurationError,
   LibraryNotFoundInStoreError,
   StoreError,
   VersionNotFoundInStoreError,
@@ -32,7 +34,7 @@ import type {
 } from "./types";
 
 /**
- * Provides semantic search capabilities across different versions of library documentation.
+ * Provides content management and semantic chunking capabilities across different versions of library documentation.
  * Uses content-type-specific pipelines for processing and splitting content.
  */
 export class DocumentManagementService {
@@ -41,6 +43,7 @@ export class DocumentManagementService {
   private readonly documentRetriever: DocumentRetrieverService;
   private readonly pipelines: ContentPipeline[];
   private readonly eventBus: EventBusService;
+  private embeddingModel: Embeddings | null = null;
 
   constructor(eventBus: EventBusService, appConfig: AppConfig) {
     this.appConfig = appConfig;
@@ -49,15 +52,8 @@ export class DocumentManagementService {
     if (!storePath) {
       throw new Error("storePath is required when not using a remote server");
     }
-    // Handle special :memory: case for in-memory databases (primarily for testing)
-    const dbPath =
-      storePath === ":memory:" ? ":memory:" : path.join(storePath, "documents.db");
 
-    logger.debug(`Using database path: ${dbPath}`);
-
-    // Directory creation is handled by the centralized path resolution
-
-    this.store = DocumentStoreFactory.create(dbPath, this.appConfig);
+    this.store = DocumentStoreFactory.create(this.appConfig);
     this.documentRetriever = new DocumentRetrieverService(this.store, this.appConfig);
 
     // Initialize content pipelines for different content types including universal TextPipeline fallback
@@ -85,6 +81,7 @@ export class DocumentManagementService {
    */
   async initialize(): Promise<void> {
     await this.store.initialize();
+    this.embeddingModel = this.store.getEmbeddingModel();
   }
 
   /**
@@ -432,6 +429,7 @@ export class DocumentManagementService {
     version: string | null | undefined,
     depth: number,
     result: ScrapeResult,
+    scraperOptions?: Pick<ScraperOptions, "chunkingStrategy" | "semanticThreshold">,
   ): Promise<void> {
     const processingStart = performance.now();
     const normalizedVersion = this.normalizeVersion(version);
@@ -447,11 +445,31 @@ export class DocumentManagementService {
       return;
     }
 
+    let finalResult = result;
+    if (scraperOptions?.chunkingStrategy === "semantic") {
+      if (!this.embeddingModel) {
+        throw new ConfigurationError(
+          "Semantic chunking requires an embedding model to be configured. " +
+            "Please set the EMBEDDING_MODEL environment variable.",
+        );
+      }
+      const semanticChunker = new SemanticChunkingStrategy(
+        this.embeddingModel,
+        scraperOptions.semanticThreshold,
+      );
+      const fullText = chunks.map((c: Chunk) => c.content).join("\n\n");
+      const semanticChunks = await semanticChunker.splitText(fullText);
+      logger.info(
+        `✂️  Semantic chunking: ${chunks.length} → ${semanticChunks.length} chunks`,
+      );
+      finalResult = { ...result, chunks: semanticChunks };
+    }
+
     try {
-      logger.info(`✂️  Storing ${chunks.length} pre-split chunks`);
+      logger.info(`✂️  Storing ${finalResult.chunks.length} pre-split chunks`);
 
       // Add split documents to store
-      await this.store.addDocuments(library, normalizedVersion, depth, result);
+      await this.store.addDocuments(library, normalizedVersion, depth, finalResult);
 
       // Emit library change event after adding documents
       this.eventBus.emit(EventType.LIBRARY_CHANGE, undefined);

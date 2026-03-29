@@ -2,20 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../utils/config";
 import { loadConfig } from "../utils/config";
 import { DocumentRetrieverService } from "./DocumentRetrieverService";
-import { DocumentStore } from "./DocumentStore";
+import { PostgresDocumentStore } from "./PostgresDocumentStore";
 import type { DbChunkRank, DbPageChunk } from "./types";
 
-vi.mock("./DocumentStore");
+vi.mock("./PostgresDocumentStore");
 
 describe("DocumentRetrieverService", () => {
-  let store: DocumentStore;
+  let store: PostgresDocumentStore;
   let service: DocumentRetrieverService;
   let config: AppConfig;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     config = loadConfig();
-    store = new DocumentStore(":memory:", config);
+    store = new PostgresDocumentStore("postgresql://localhost/test", config);
     await store.initialize();
     service = new DocumentRetrieverService(store, config);
   });
@@ -160,11 +160,13 @@ describe("DocumentRetrieverService", () => {
     vi.spyOn(store, "findPrecedingSiblingChunks").mockResolvedValue([]);
     vi.spyOn(store, "findChildChunks").mockResolvedValue([]);
     vi.spyOn(store, "findSubsequentSiblingChunks").mockResolvedValue([]);
-    vi.spyOn(store, "findChunksByIds").mockImplementation(async (_lib, _ver, ids) => {
-      if (ids.includes("a1")) return [docA];
-      if (ids.includes("b1")) return [docB];
-      return [];
-    });
+    vi.spyOn(store, "findChunksByIds").mockImplementation(
+      async (_lib, _ver, ids: string[]) => {
+        if (ids.includes("a1")) return [docA];
+        if (ids.includes("b1")) return [docB];
+        return [];
+      },
+    );
 
     const results = await service.search(library, version, query);
 
@@ -816,11 +818,13 @@ describe("DocumentRetrieverService", () => {
       vi.spyOn(store, "findChildChunks").mockResolvedValue([]);
 
       // Mock findChunksByIds to return the specific chunk requested
-      vi.spyOn(store, "findChunksByIds").mockImplementation(async (_lib, _ver, ids) => {
-        if (ids.includes("chunk1")) return [chunk1];
-        if (ids.includes("chunk2")) return [chunk2];
-        return [];
-      });
+      vi.spyOn(store, "findChunksByIds").mockImplementation(
+        async (_lib, _ver, ids: string[]) => {
+          if (ids.includes("chunk1")) return [chunk1];
+          if (ids.includes("chunk2")) return [chunk2];
+          return [];
+        },
+      );
 
       const results = await service.search(library, version, query);
 
@@ -922,12 +926,14 @@ describe("DocumentRetrieverService", () => {
       vi.spyOn(store, "findSubsequentSiblingChunks").mockResolvedValue([]);
       vi.spyOn(store, "findChildChunks").mockResolvedValue([]);
 
-      vi.spyOn(store, "findChunksByIds").mockImplementation(async (_lib, _ver, ids) => {
-        if (ids.includes("chunkA")) return [chunkA];
-        if (ids.includes("chunkB")) return [chunkB];
-        if (ids.includes("chunkC")) return [chunkC];
-        return [];
-      });
+      vi.spyOn(store, "findChunksByIds").mockImplementation(
+        async (_lib, _ver, ids: string[]) => {
+          if (ids.includes("chunkA")) return [chunkA];
+          if (ids.includes("chunkB")) return [chunkB];
+          if (ids.includes("chunkC")) return [chunkC];
+          return [];
+        },
+      );
 
       const results = await service.search(library, version, query);
 
