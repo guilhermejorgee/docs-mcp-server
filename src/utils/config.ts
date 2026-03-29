@@ -85,6 +85,13 @@ export const DEFAULT_CONFIG = {
     vectorDimension: 1536,
   },
   db: {
+    backend: "sqlite" as "sqlite" | "postgresql",
+    postgresql: {
+      connectionString: "",
+      poolSize: 10,
+      idleTimeoutMs: 30000,
+      connectionTimeoutMs: 5000,
+    },
     migrationMaxRetries: 5,
     migrationRetryDelayMs: 300,
   },
@@ -93,6 +100,7 @@ export const DEFAULT_CONFIG = {
     weightVec: 1,
     weightFts: 1,
     vectorMultiplier: 10,
+    ftsLanguages: ["simple"] as string[],
   },
   sandbox: {
     defaultTimeoutMs: 5000,
@@ -231,6 +239,26 @@ export const AppConfigSchema = z.object({
     .default(DEFAULT_CONFIG.embeddings),
   db: z
     .object({
+      backend: z.enum(["sqlite", "postgresql"]).default(DEFAULT_CONFIG.db.backend),
+      postgresql: z
+        .object({
+          connectionString: z
+            .string()
+            .default(DEFAULT_CONFIG.db.postgresql.connectionString),
+          poolSize: z.coerce
+            .number()
+            .int()
+            .default(DEFAULT_CONFIG.db.postgresql.poolSize),
+          idleTimeoutMs: z.coerce
+            .number()
+            .int()
+            .default(DEFAULT_CONFIG.db.postgresql.idleTimeoutMs),
+          connectionTimeoutMs: z.coerce
+            .number()
+            .int()
+            .default(DEFAULT_CONFIG.db.postgresql.connectionTimeoutMs),
+        })
+        .default(DEFAULT_CONFIG.db.postgresql),
       migrationMaxRetries: z.coerce
         .number()
         .int()
@@ -250,6 +278,7 @@ export const AppConfigSchema = z.object({
         .number()
         .int()
         .default(DEFAULT_CONFIG.search.vectorMultiplier),
+      ftsLanguages: z.array(z.string()).default(DEFAULT_CONFIG.search.ftsLanguages),
     })
     .default(DEFAULT_CONFIG.search),
   sandbox: z
@@ -301,6 +330,11 @@ interface ConfigMapping {
 const configMappings: ConfigMapping[] = [
   { path: ["server", "protocol"], env: ["DOCS_MCP_PROTOCOL"], cli: "protocol" },
   { path: ["app", "storePath"], env: ["DOCS_MCP_STORE_PATH"], cli: "storePath" },
+  { path: ["db", "backend"], env: ["DOCS_MCP_BACKEND"] },
+  {
+    path: ["db", "postgresql", "connectionString"],
+    env: ["DATABASE_URL", "DOCS_MCP_DATABASE_URL"],
+  },
   { path: ["app", "telemetryEnabled"], env: ["DOCS_MCP_TELEMETRY"] }, // Handled via --no-telemetry in CLI usually
   { path: ["app", "readOnly"], env: ["DOCS_MCP_READ_ONLY"], cli: "readOnly" },
   // Ports - Special handling for shared env vars is done in mapping logic
@@ -551,6 +585,12 @@ function getAtPath(obj: ConfigObject, pathArr: string[]): unknown {
 function deepMerge(target: unknown, source: unknown): unknown {
   if (typeof target !== "object" || target === null) return source;
   if (typeof source !== "object" || source === null) return target;
+  // Arrays should replace, not be recursively merged. If types mismatch (e.g.
+  // a stored config has an array serialized as an indexed object), fall back to
+  // the target (default) value so the schema can validate cleanly.
+  if (Array.isArray(target) || Array.isArray(source)) {
+    return Array.isArray(source) ? source : target;
+  }
 
   const t = target as ConfigObject;
   const s = source as ConfigObject;

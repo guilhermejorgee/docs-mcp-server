@@ -12,13 +12,14 @@ import type { AppConfig } from "../utils/config";
 import { logger } from "../utils/logger";
 import { sortVersionsDescending } from "../utils/version";
 import { DocumentRetrieverService } from "./DocumentRetrieverService";
-import { DocumentStore } from "./DocumentStore";
+import { DocumentStoreFactory } from "./DocumentStoreFactory";
 import type { EmbeddingModelConfig } from "./embeddings/EmbeddingConfig";
 import {
   LibraryNotFoundInStoreError,
   StoreError,
   VersionNotFoundInStoreError,
 } from "./errors";
+import type { IDocumentStore } from "./IDocumentStore";
 import type {
   DbVersionWithLibrary,
   FindVersionResult,
@@ -36,7 +37,7 @@ import type {
  */
 export class DocumentManagementService {
   private readonly appConfig: AppConfig;
-  private readonly store: DocumentStore;
+  private readonly store: IDocumentStore;
   private readonly documentRetriever: DocumentRetrieverService;
   private readonly pipelines: ContentPipeline[];
   private readonly eventBus: EventBusService;
@@ -56,7 +57,7 @@ export class DocumentManagementService {
 
     // Directory creation is handled by the centralized path resolution
 
-    this.store = new DocumentStore(dbPath, this.appConfig);
+    this.store = DocumentStoreFactory.create(dbPath, this.appConfig);
     this.documentRetriever = new DocumentRetrieverService(this.store, this.appConfig);
 
     // Initialize content pipelines for different content types including universal TextPipeline fallback

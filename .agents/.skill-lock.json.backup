@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "skills": {
+    "mermaid-studio": {
+      "name": "mermaid-studio",
+      "source": "local",
+      "contentHash": "8a240b980cee9287a20ec6ea1e4837c5d6e43c756ab17fcebbf6b1087a609815",
+      "installedAt": "2026-03-28T16:53:41.974Z",
+      "updatedAt": "2026-03-28T16:53:41.984Z",
+      "agents": [
+        "claude-code"
+      ],
+      "method": "copy",
+      "global": false
+    }
+  }
+}

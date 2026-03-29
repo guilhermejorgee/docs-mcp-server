@@ -53,12 +53,11 @@ const mockStore = {
   deleteLibrary: vi.fn(),
 };
 
-// Mock the DocumentStore module
-vi.mock("./DocumentStore", () => {
-  // Create the mock constructor *inside* the factory function
-  const MockDocumentStore = vi.fn(() => mockStore);
-  return { DocumentStore: MockDocumentStore };
-});
+// Mock the DocumentStoreFactory module so DocumentManagementService gets the mock store
+vi.mock("./DocumentStoreFactory", () => ({
+  createDocumentStore: vi.fn(() => mockStore),
+  DocumentStoreFactory: { create: vi.fn(() => mockStore) },
+}));
 
 import { EventBusService } from "../events";
 import { loadConfig } from "../utils/config";

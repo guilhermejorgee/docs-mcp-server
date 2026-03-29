@@ -123,6 +123,20 @@ OPENAI_API_KEY="sk-proj-..." npx @arabold/docs-mcp-server@latest
 
 See **[Embedding Models](docs/guides/embedding-models.md)** for configuring **Ollama**, **Gemini**, **Azure**, and others.
 
+### 🐘 PostgreSQL Backend (Optional)
+
+By default the server uses **SQLite** (zero configuration, single-process). For multi-instance or production deployments, switch to **PostgreSQL**:
+
+```bash
+DATABASE_URL=postgresql://user:pass@host:5432/mydb \
+DOCS_MCP_BACKEND=postgresql \
+npx @arabold/docs-mcp-server@latest
+```
+
+Requirements: PostgreSQL 14+ with [pgvector](https://github.com/pgvector/pgvector) extension installed.
+
+See **[PostgreSQL Backend](docs/deployment/postgresql.md)** for the full setup guide.
+
 ---
 
 ## 📚 Documentation
@@ -137,6 +151,7 @@ See **[Embedding Models](docs/guides/embedding-models.md)** for configuring **Ol
 
 ### Key Concepts & Architecture
 -   **[Deployment Modes](docs/infrastructure/deployment-modes.md)**: Standalone vs. Distributed (Docker Compose).
+-   **[PostgreSQL Backend](docs/deployment/postgresql.md)**: Scale to multi-instance deployments with PostgreSQL.
 -   **[Authentication](docs/infrastructure/authentication.md)**: Securing your server with OAuth2/OIDC.
 -   **[Telemetry](docs/infrastructure/telemetry.md)**: Privacy-first usage data collection.
 -   **[Architecture](ARCHITECTURE.md)**: Deep dive into the system design.

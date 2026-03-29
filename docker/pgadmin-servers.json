@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Docs MCP Local Postgres",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "docs_mcp",
+      "Username": "docs",
+      "SSLMode": "prefer"
+    }
+  }
+}

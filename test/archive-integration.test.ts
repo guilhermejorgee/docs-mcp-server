@@ -63,9 +63,14 @@ describe("LocalFileStrategy - Archive Integration", () => {
         { url, includePatterns: [], excludePatterns: [], library: "test-lib", version: "1.0.0" } as any
     );
 
+    const expectedHello = new URL(`file://${path.join(ZIP_PATH, "hello.txt").replace(/\\/g, "/")}`).href;
+    const expectedNested = new URL(
+      `file://${path.join(ZIP_PATH, "folder", "nested.txt").replace(/\\/g, "/")}`,
+    ).href;
+
     expect(result.status).toBe(FetchStatus.SUCCESS);
-    expect(result.links).toContain(`file://${ZIP_PATH}/hello.txt`);
-    expect(result.links).toContain(`file://${ZIP_PATH}/folder/nested.txt`);
+    expect(result.links).toContain(expectedHello);
+    expect(result.links).toContain(expectedNested);
   });
 
   it("should read file content from inside zip", async () => {
