@@ -123,6 +123,8 @@ OPENAI_API_KEY="sk-proj-..." npx @arabold/docs-mcp-server@latest
 
 See **[Embedding Models](docs/guides/embedding-models.md)** for configuring **Ollama**, **Gemini**, **Azure**, and others.
 
+Internal or enterprise providers that authenticate via OAuth2 `client_credentials` are also supported — configure `tokenUrl` and `clientId` in your `config.yaml`. Client secrets can be stored in **HashiCorp Vault** or **AWS Secrets Manager** by setting `DOCS_MCP_SECRETS_PROVIDER`. See [Embedding Model Configuration](docs/guides/embedding-models.md#oauth2-authentication-openai-compatible-providers) for full OAuth2 setup details.
+
 ### 🐘 PostgreSQL Backend
 
 The server requires **PostgreSQL** (version 14 or newer). Configure the database connection:

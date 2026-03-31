@@ -2,6 +2,8 @@ import type { Embeddings } from "@langchain/core/embeddings";
 import type { QueryResultRow } from "pg";
 import pg from "pg";
 import type { ScrapeResult, ScraperOptions } from "../scraper/types";
+import { EnvSecretProvider } from "../secrets/EnvSecretProvider";
+import type { ISecretProvider } from "../secrets/ISecretProvider";
 import type { AppConfig } from "../utils/config";
 import { logger } from "../utils/logger";
 import { compareVersionsDescending } from "../utils/version";
@@ -48,15 +50,21 @@ interface RawSearchResult extends DbChunk {
 export class PostgresDocumentStore implements IDocumentStore {
   private readonly config: AppConfig;
   private readonly pool: pg.Pool;
+  private readonly secretProvider: ISecretProvider;
 
   private embeddings: Embeddings | undefined;
   private readonly embeddingConfig?: EmbeddingModelConfig | null;
 
-  constructor(connectionString: string, config: AppConfig) {
+  constructor(
+    connectionString: string,
+    config: AppConfig,
+    secretProvider?: ISecretProvider,
+  ) {
     if (!connectionString) {
       throw new StoreError("Missing required PostgreSQL connection string");
     }
     this.config = config;
+    this.secretProvider = secretProvider ?? new EnvSecretProvider();
 
     this.pool = new pg.Pool({
       connectionString,
@@ -163,7 +171,7 @@ export class PostgresDocumentStore implements IDocumentStore {
 
     const config = this.embeddingConfig;
 
-    if (!areCredentialsAvailable(config.provider)) {
+    if (!areCredentialsAvailable(config.provider, this.config.embeddings)) {
       logger.warn(
         `⚠️  No credentials found for ${config.provider} embedding provider. Embeddings disabled.\n` +
           `   Configure the required environment variables for ${config.provider}.\n` +
@@ -175,6 +183,7 @@ export class PostgresDocumentStore implements IDocumentStore {
     try {
       this.embeddings = createEmbeddingModel(config.modelSpec, {
         config: this.config.embeddings,
+        secretProvider: this.secretProvider,
       });
       logger.debug(`Embeddings initialized: ${config.provider}:${config.model}`);
     } catch (error) {

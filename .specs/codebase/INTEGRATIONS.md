@@ -7,7 +7,7 @@
 **Purpose:** Generate vector embeddings for document chunks.
 **Implementation:** `src/store/embeddings/EmbeddingFactory.ts` via `@langchain/openai`
 **Configuration:** `OPENAI_API_KEY` env var; model via `DOCS_MCP_EMBEDDING_MODEL` (default: `text-embedding-3-small`)
-**Authentication:** API key via env var
+**Authentication:** API key via env var **or** OAuth2 `client_credentials` when `embeddings.tokenUrl` is configured. OAuth2 client secret resolved via `ISecretProvider`.
 
 ### Google GenAI (Gemini)
 
@@ -89,6 +89,20 @@
   - `DOCS_MCP_AUTH_ISSUER_URL` — OIDC issuer URL
   - `DOCS_MCP_AUTH_AUDIENCE` — expected JWT audience
 **Flow:** Bearer token in Authorization header, verified against JWKS from issuer
+
+### HashiCorp Vault
+
+**Purpose:** KV v2 secret backend for resolving OAuth2 client secrets.
+**Implementation:** `src/secrets/VaultSecretProvider.ts` via HTTP API (Axios)
+**Configuration:** `secrets.vault.url`, `secrets.vault.token`, `secrets.vault.mountPath`
+**Authentication:** Static token (`X-Vault-Token` header)
+
+### AWS Secrets Manager
+
+**Purpose:** Cloud secret backend for resolving OAuth2 client secrets.
+**Implementation:** `src/secrets/AwsSecretProvider.ts` via `@aws-sdk/client-secrets-manager` (AWS SDK v3)
+**Configuration:** `secrets.aws.region`, `secrets.aws.secretId`
+**Authentication:** Standard AWS credential chain (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / instance profile)
 
 ## Document Processing
 

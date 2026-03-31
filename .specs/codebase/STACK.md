@@ -19,6 +19,7 @@
 - Schema validation: Zod 4
 - Config format: YAML (via `yaml` library), auto-saves defaults to `~/.config/docs-mcp-server/config.yaml`
 - Auth: OAuth2/OIDC via `jose` JWT library
+- Secrets: `ISecretProvider` abstraction with `env` (default), `vault` (HashiCorp Vault KV v2 via `axios`), and `aws` (`@aws-sdk/client-secrets-manager` — AWS SDK v3) backends
 
 ## Frontend (Web UI)
 

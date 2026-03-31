@@ -67,6 +67,12 @@ src/
 │   ├── pipelines/                   # Content-type-specific processing
 │   ├── strategies/                  # Source-specific scraping strategies
 │   └── utils/                       # Scraping utilities
+├── secrets/                         # Secret backend abstraction
+│   ├── ISecretProvider.ts           # Interface for secret resolution
+│   ├── EnvSecretProvider.ts         # Default: reads from env vars
+│   ├── VaultSecretProvider.ts       # HashiCorp Vault KV v2 backend
+│   ├── AwsSecretProvider.ts         # AWS Secrets Manager backend
+│   └── SecretProviderFactory.ts     # createSecretProvider() factory
 ├── services/                        # Service registration functions
 ├── splitter/                        # Document chunking and segmentation
 │   ├── GreedySplitter.ts            # Universal size optimization
@@ -258,7 +264,7 @@ Content processing follows a modular strategy-pipeline-splitter architecture:
 4. **Document Processing**: Extract text from binary documents (PDF, Office, EPUB, etc.) using Kreuzberg
 5. **Document Splitters**: Segment content into semantic chunks preserving document structure
 6. **Size Optimization**: Apply universal chunk sizing for optimal storage and retrieval
-7. **Semantic Chunking** (optional): Generate transient vector embeddings for higher-quality content splitting; embeddings are not stored
+7. **Semantic Chunking** (optional): Generate transient vector embeddings for higher-quality content splitting; embeddings are not stored. When `embeddings.tokenUrl` is configured, each batch authenticates via OAuth2 `client_credentials` using the configured `ISecretProvider` to resolve the client secret.
 
 The system uses a two-phase splitting approach: semantic splitting preserves document structure, followed by size optimization for embedding quality. See [Content Processing](docs/concepts/content-processing.md) for detailed processing flows.
 
@@ -273,7 +279,26 @@ PostgreSQL database with normalized schema:
 
 The `versions` table serves as the job state hub, storing progress, errors, and scraper configuration for reproducible re-indexing.
 
-DocumentManagementService handles CRUD operations and version resolution. DocumentRetrieverService provides full-text search using PostgreSQL `plainto_tsquery` with contextual hierarchy reassembly (parent/sibling chunks). Search is full-text only — no vector similarity or stored embeddings.
+DocumentManagementService handles CRUD operations and version resolution. DocumentRetrieverService provides full-text search using PostgreSQL `plainto_tsquery` with contextual hierarchy reassembly (parent/sibling chunks). Search is full-text only — no vector similarity or stored embeddings. `PostgresDocumentStore` receives an `ISecretProvider` at construction, which is forwarded to `EmbeddingFactory` for OAuth2 token resolution when `embeddings.tokenUrl` is configured.
+
+### Secrets Layer
+
+The secrets layer provides a uniform interface for resolving sensitive configuration values (e.g., OAuth2 client secrets) without embedding them in the application config directly.
+
+**ISecretProvider**: Single-method interface (`getSecret(key): Promise<string>`).
+
+**EnvSecretProvider** (default): Reads from process environment variables. Requires no additional infrastructure.
+
+**VaultSecretProvider**: Reads from HashiCorp Vault KV v2 via HTTP API. Configured via `secrets.vault.*` config keys.
+
+**AwsSecretProvider**: Reads from AWS Secrets Manager using `@aws-sdk/client-secrets-manager`. Configured via `secrets.aws.*` config keys.
+
+**SecretProviderFactory**: `createSecretProvider(config.secrets)` selects and instantiates the correct provider at boot time. The provider instance is passed down to `PostgresDocumentStore` → `EmbeddingFactory`.
+
+Boot initialization sequence:
+```
+loadConfig() → createSecretProvider(config.secrets) → PostgresDocumentStore(conn, config, secretProvider)
+```
 
 ## Interface Implementations
 

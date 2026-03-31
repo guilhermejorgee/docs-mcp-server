@@ -83,6 +83,22 @@ export const DEFAULT_CONFIG = {
     requestTimeoutMs: 30_000,
     initTimeoutMs: 30_000,
     vectorDimension: 1536,
+    tokenUrl: undefined as string | undefined,
+    clientId: undefined as string | undefined,
+    clientSecretKey: "DOCS_MCP_EMBEDDING_CLIENT_SECRET",
+    tokenCacheTtlMs: undefined as number | undefined,
+  },
+  secrets: {
+    provider: "env" as "env" | "vault" | "aws",
+    vault: {
+      url: undefined as string | undefined,
+      token: undefined as string | undefined,
+      mountPath: undefined as string | undefined,
+    },
+    aws: {
+      region: undefined as string | undefined,
+      secretId: undefined as string | undefined,
+    },
   },
   db: {
     backend: "postgresql" as "postgresql",
@@ -237,8 +253,19 @@ export const AppConfigSchema = z.object({
         .number()
         .int()
         .default(DEFAULT_CONFIG.embeddings.vectorDimension),
+      tokenUrl: z.string().url().optional(),
+      clientId: z.string().optional(),
+      clientSecretKey: z.string().default(DEFAULT_CONFIG.embeddings.clientSecretKey),
+      tokenCacheTtlMs: z.coerce.number().int().positive().optional(),
     })
-    .default(DEFAULT_CONFIG.embeddings),
+    .default({
+      batchSize: DEFAULT_CONFIG.embeddings.batchSize,
+      batchChars: DEFAULT_CONFIG.embeddings.batchChars,
+      requestTimeoutMs: DEFAULT_CONFIG.embeddings.requestTimeoutMs,
+      initTimeoutMs: DEFAULT_CONFIG.embeddings.initTimeoutMs,
+      vectorDimension: DEFAULT_CONFIG.embeddings.vectorDimension,
+      clientSecretKey: DEFAULT_CONFIG.embeddings.clientSecretKey,
+    }),
   db: z
     .object({
       backend: z.enum(["postgresql"]).default(DEFAULT_CONFIG.db.backend),
@@ -322,6 +349,24 @@ export const AppConfigSchema = z.object({
         .default(DEFAULT_CONFIG.assembly.maxChunkDistance),
     })
     .default(DEFAULT_CONFIG.assembly),
+  secrets: z
+    .object({
+      provider: z.enum(["env", "vault", "aws"]).default(DEFAULT_CONFIG.secrets.provider),
+      vault: z
+        .object({
+          url: z.string().optional(),
+          token: z.string().optional(),
+          mountPath: z.string().optional(),
+        })
+        .default({}),
+      aws: z
+        .object({
+          region: z.string().optional(),
+          secretId: z.string().optional(),
+        })
+        .default({}),
+    })
+    .default({ provider: "env", vault: {}, aws: {} }),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -386,6 +431,25 @@ const configMappings: ConfigMapping[] = [
     env: ["DOCS_MCP_AUTH_AUDIENCE"],
     cli: "authAudience",
   },
+  { path: ["embeddings", "tokenUrl"], env: ["DOCS_MCP_EMBEDDINGS_TOKEN_URL"] },
+  { path: ["embeddings", "clientId"], env: ["DOCS_MCP_EMBEDDINGS_CLIENT_ID"] },
+  {
+    path: ["embeddings", "clientSecretKey"],
+    env: ["DOCS_MCP_EMBEDDINGS_CLIENT_SECRET_KEY"],
+  },
+  {
+    path: ["embeddings", "tokenCacheTtlMs"],
+    env: ["DOCS_MCP_EMBEDDINGS_TOKEN_CACHE_TTL_MS"],
+  },
+  { path: ["secrets", "provider"], env: ["DOCS_MCP_SECRETS_PROVIDER"] },
+  { path: ["secrets", "vault", "url"], env: ["DOCS_MCP_SECRETS_VAULT_URL"] },
+  { path: ["secrets", "vault", "token"], env: ["DOCS_MCP_SECRETS_VAULT_TOKEN"] },
+  {
+    path: ["secrets", "vault", "mountPath"],
+    env: ["DOCS_MCP_SECRETS_VAULT_MOUNT_PATH"],
+  },
+  { path: ["secrets", "aws", "region"], env: ["DOCS_MCP_SECRETS_AWS_REGION"] },
+  { path: ["secrets", "aws", "secretId"], env: ["DOCS_MCP_SECRETS_AWS_SECRET_ID"] },
   // Add other mappings as needed for CLI/Env overrides
 ];
 

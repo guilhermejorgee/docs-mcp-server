@@ -36,6 +36,10 @@ Provider credentials use the provider-specific environment variables listed belo
 | `AZURE_OPENAI_API_INSTANCE_NAME`   | Azure OpenAI instance name.                           |
 | `AZURE_OPENAI_API_DEPLOYMENT_NAME` | Azure OpenAI deployment name.                         |
 | `AZURE_OPENAI_API_VERSION`         | Azure OpenAI API version.                             |
+| `DOCS_MCP_EMBEDDINGS_TOKEN_URL`    | OAuth2 token endpoint URL. Required when using `client_credentials` authentication instead of an API key. |
+| `DOCS_MCP_EMBEDDINGS_CLIENT_ID`    | OAuth2 client ID. Required when `DOCS_MCP_EMBEDDINGS_TOKEN_URL` is set. |
+| `DOCS_MCP_EMBEDDINGS_CLIENT_SECRET_KEY` | Key name to resolve the client secret via the configured secret provider (default: `DOCS_MCP_EMBEDDING_CLIENT_SECRET`). |
+| `DOCS_MCP_EMBEDDINGS_TOKEN_CACHE_TTL_MS` | Override `expires_in` from the token response (ms); omit to rely on the server-provided TTL. |
 
 ### Examples
 
@@ -115,6 +119,24 @@ AZURE_OPENAI_API_VERSION="2024-02-01" \
 DOCS_MCP_EMBEDDING_MODEL="microsoft:text-embedding-ada-002" \
 npx @arabold/docs-mcp-server@latest
 ```
+
+## OAuth2 Authentication (OpenAI-Compatible Providers)
+
+Internal or enterprise OpenAI-compatible embedding providers hosted behind an SSO gateway can authenticate using the OAuth2 `client_credentials` flow. Configure `tokenUrl` and `clientId` in your `config.yaml`:
+
+```yaml
+embeddings:
+  tokenUrl: "https://auth.example.com/oauth2/token"
+  clientId: "docs-mcp-service"
+  clientSecretKey: "DOCS_MCP_EMBEDDING_CLIENT_SECRET"
+  tokenCacheTtlMs: 3600000
+```
+
+When `tokenUrl` is absent, behavior is unchanged — the standard API key flow applies.
+
+> **Note:** OAuth2 here authenticates _this server_ against the **embedding provider**. This is distinct from OAuth2 for protecting the MCP server's own HTTP endpoints — see [Authentication](../infrastructure/authentication.md).
+
+For secrets configuration (resolving `clientSecretKey` from HashiCorp Vault or AWS Secrets Manager), see [Configuration Reference](../setup/configuration.md#secrets-secrets).
 
 ## See Also
 

@@ -20,7 +20,7 @@
 
 ### No Embedding Dimension Migration Guard
 
-**Evidence:** `src/store/DocumentStore.ts` uses `FixedDimensionEmbeddings` wrapper to handle dimension mismatches during semantic chunking.
+**Evidence:** `src/store/embeddings/FixedDimensionEmbeddings.ts` wraps embeddings to handle dimension mismatches during semantic chunking.
 **Risk:** Embeddings are used transiently during the `SemanticChunkingStrategy` to detect topic boundaries. If the embedding model is changed between indexing runs, different chunking boundaries will be produced for the same content — silently changing chunk granularity.
 **Impact:** Silent chunking quality change when embedding model is changed. Re-indexing required for consistent results.
 **Fix approach:** Document that changing the embedding model requires re-indexing affected libraries. Optionally surface the configured model name in library metadata so users know when a re-index is needed.
@@ -68,3 +68,21 @@
 **Risk:** Search quality regressions go undetected until noticed manually.
 **Impact:** Potential silent degradation of core search feature.
 **Fix approach:** Run search eval in a separate scheduled workflow (nightly/weekly) with appropriate secrets configured.
+
+## OAuth2 Concerns
+
+### OAuth2 Token Cache — Multi-Process Isolation
+
+**Evidence:** `OAuth2TokenProvider` caches the `access_token` in-process memory (`src/store/embeddings/OAuth2TokenProvider.ts`).
+**Risk:** In distributed mode (coordinator + worker), each process maintains an independent cache. This can cause concurrent token fetches from both processes after expiry, effectively doubling the request rate to the token endpoint.
+**Impact:** Not a correctness issue but wasteful — duplicate token fetches, not auth failures.
+**File:** `src/store/embeddings/OAuth2TokenProvider.ts`
+**Risk level:** Low
+
+### OAuth2 Token Endpoint — No Circuit Breaker
+
+**Evidence:** `OAuth2TokenProvider` has no backoff or circuit-breaker logic (`src/store/embeddings/OAuth2TokenProvider.ts`).
+**Risk:** If the token endpoint returns persistent errors (5xx / network timeouts), every embedding batch will individually attempt a token fetch and fail. In high-throughput indexing, this creates a tight retry loop against a downed auth service.
+**Impact:** Cascading failures in indexing pipelines during auth outages.
+**File:** `src/store/embeddings/OAuth2TokenProvider.ts`
+**Risk level:** Medium

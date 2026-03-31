@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { loadConfig } from "../../utils/config";
 import { sanitizeEnvironment } from "../../utils/env";
 import { MissingCredentialsError } from "../errors";
-import { createEmbeddingModel, UnsupportedProviderError } from "./EmbeddingFactory";
+import {
+  areCredentialsAvailable,
+  createEmbeddingModel,
+  UnsupportedProviderError,
+} from "./EmbeddingFactory";
 import { FixedDimensionEmbeddings } from "./FixedDimensionEmbeddings";
 
 // Suppress logger output during tests
@@ -208,5 +212,70 @@ describe("createEmbeddingModel", () => {
         expect(clientConfig.baseURL).toBe("http://localhost:11434/v1");
       }
     });
+  });
+
+  describe("PATH B — OAuth2 client_credentials", () => {
+    test("PATH B activates when tokenUrl and clientId are set, even without OPENAI_API_KEY", () => {
+      vi.stubGlobal("process", { env: {} }); // no OPENAI_API_KEY
+      const oauth2Config = {
+        ...appConfig.embeddings,
+        tokenUrl: "https://auth.example.com/token",
+        clientId: "my-client",
+        clientSecretKey: "MY_SECRET_KEY",
+      };
+      const model = createEmbeddingModel("text-embedding-3-small", {
+        ...runtimeConfig,
+        config: oauth2Config,
+        secretProvider: { getSecret: async () => "secret" },
+      });
+      expect(model).toBeInstanceOf(OpenAIEmbeddings);
+    });
+
+    test("PATH A is unchanged when no tokenUrl is set and OPENAI_API_KEY is present", () => {
+      // runtimeConfig has no tokenUrl, env has OPENAI_API_KEY (set in beforeEach)
+      const model = createEmbeddingModel("text-embedding-3-small", runtimeConfig);
+      expect(model).toBeInstanceOf(OpenAIEmbeddings);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// areCredentialsAvailable
+// ---------------------------------------------------------------------------
+
+describe("areCredentialsAvailable", () => {
+  afterEach(() => {
+    vi.stubGlobal("process", { env: {} });
+  });
+
+  test("returns true for openai when OAuth2 config is present (no OPENAI_API_KEY needed)", () => {
+    vi.stubGlobal("process", { env: {} });
+    const result = areCredentialsAvailable("openai", {
+      ...appConfig.embeddings,
+      tokenUrl: "https://auth.example.com/token",
+      clientId: "my-client",
+    });
+    expect(result).toBe(true);
+  });
+
+  test("returns false for openai when no OPENAI_API_KEY and no OAuth2 config", () => {
+    vi.stubGlobal("process", { env: {} });
+    expect(areCredentialsAvailable("openai")).toBe(false);
+  });
+
+  test("returns true for openai when OPENAI_API_KEY is set (no embeddingsConfig arg — backward compat)", () => {
+    vi.stubGlobal("process", { env: { OPENAI_API_KEY: "key" } });
+    expect(areCredentialsAvailable("openai")).toBe(true);
+  });
+
+  test("returns false for openai when OAuth2 config has tokenUrl but no clientId", () => {
+    vi.stubGlobal("process", { env: {} });
+    expect(
+      areCredentialsAvailable("openai", {
+        ...appConfig.embeddings,
+        tokenUrl: "https://auth.example.com/token",
+        clientId: undefined,
+      }),
+    ).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+import { createSecretProvider } from "../secrets";
 import type { AppConfig } from "../utils/config";
 import { StoreError } from "./errors";
 import type { IDocumentStore } from "./IDocumentStore";
@@ -13,7 +14,8 @@ export function createDocumentStore(config: AppConfig): IDocumentStore {
       "PostgreSQL backend requires db.postgresql.connectionString or DATABASE_URL",
     );
   }
-  return new PostgresDocumentStore(connectionString, config);
+  const secretProvider = createSecretProvider(config.secrets);
+  return new PostgresDocumentStore(connectionString, config, secretProvider);
 }
 
 /** @deprecated Use createDocumentStore() instead */

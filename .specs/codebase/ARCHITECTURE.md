@@ -101,6 +101,12 @@ ScrapeTool.execute()
       → EmbeddingFactory generates vectors
       → DocumentStore stores chunks + vectors
     → [status → COMPLETED, events emitted]
+
+Boot sequence:
+  loadConfig()
+    → createSecretProvider(config.secrets)
+      → PostgresDocumentStore(conn, config, secretProvider)
+        → EmbeddingFactory(config, secretProvider)
 ```
 
 ### Search Flow
@@ -112,6 +118,10 @@ SearchTool.execute()
   → docService.searchStore()
     → DocumentRetrieverService
       → Full-text search (PostgreSQL tsvector FTS)
+        → tsquery built dynamically by buildFtsTsquerySql(config.search.ftsLanguages):
+           always includes plainto_tsquery('multilingual', $1); non-simple languages
+           add OR-combined plainto_tsquery(lang, $1) terms
+        → Default ftsLanguages=["simple"] produces identical SQL to previous behaviour
       → Assembly: enrich with parent/sibling chunks
   → returns StoreSearchResult[]
 ```

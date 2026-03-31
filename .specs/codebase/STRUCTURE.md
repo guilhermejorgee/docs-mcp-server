@@ -44,7 +44,7 @@ docs-mcp-server/
 │       ├── styles/             # Tailwind CSS entry
 │       └── utils/              # Web-specific utilities
 ├── db/
-│   └── migrations/             # 13 sequential SQL migration files (000–012)
+│   └── migrations-pg/      # 15 SQL migration files (000–014)
 ├── test/                       # E2E tests + fixtures + helpers
 │   └── fixtures/               # Sample files (PDF, DOCX, PPTX, XLSX, ZIP, etc.)
 ├── tests/
@@ -111,5 +111,8 @@ docs-mcp-server/
 - Env var pattern: `DOCS_MCP_<SECTION>_<KEY>` (auto-generated from paths)
 
 **Database schema:**
-- Migrations: `db/migrations/000-initial-schema.sql` → `012-add-source-content-type.sql`
+- Migrations: `db/migrations-pg/000-initial-schema.sql` → `014-add-fts-stemming-configs.sql`
 - Migration runner: `src/store/applyMigrations.ts`
+
+**Secrets / sensitive config:**
+- Interface + implementations: `src/secrets/` — `ISecretProvider` + `EnvSecretProvider`, `VaultSecretProvider`, `AwsSecretProvider` + `SecretProviderFactory` for boot-time backend selection
