@@ -9,6 +9,7 @@ import type { IDocumentManagement } from "../store/trpc/interfaces";
 import {
   CancelJobTool,
   FetchUrlTool,
+  FindLibraryTool,
   FindVersionTool,
   GetJobInfoTool,
   ListJobsTool,
@@ -25,6 +26,7 @@ import type { AppConfig } from "../utils/config";
  */
 export interface McpServerTools {
   listLibraries: ListLibrariesTool;
+  findLibrary: FindLibraryTool;
   findVersion: FindVersionTool;
   scrape: ScrapeTool;
   refresh: RefreshVersionTool;
@@ -51,6 +53,7 @@ export async function initializeTools(
 ): Promise<McpServerTools> {
   const tools: McpServerTools = {
     listLibraries: new ListLibrariesTool(docService),
+    findLibrary: new FindLibraryTool(docService),
     findVersion: new FindVersionTool(docService),
     scrape: new ScrapeTool(pipeline, config.scraper),
     refresh: new RefreshVersionTool(pipeline),

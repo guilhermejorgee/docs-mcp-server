@@ -26,6 +26,11 @@ const LibraryDetailCard = ({ library }: LibraryDetailCardProps) => {
           <h3 class="text-lg font-medium text-gray-900 dark:text-white">
             <span safe>{library.name}</span>
           </h3>
+          {library.description ? (
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5" safe>
+              {library.description}
+            </p>
+          ) : null}
           {latestVersion?.sourceUrl ? (
             <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
               <a

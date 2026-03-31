@@ -2,6 +2,7 @@ export * from "./CancelJobTool";
 export * from "./ClearCompletedJobsTool";
 export * from "./errors";
 export * from "./FetchUrlTool";
+export * from "./FindLibraryTool";
 export * from "./FindVersionTool";
 export * from "./GetJobInfoTool";
 export * from "./ListJobsTool";

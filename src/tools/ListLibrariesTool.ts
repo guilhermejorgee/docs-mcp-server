@@ -4,6 +4,7 @@ import type { VersionStatus, VersionSummary } from "../store/types";
 // Define the structure for the tool's output, using the detailed version info
 export interface LibraryInfo {
   name: string;
+  description?: string | null;
   versions: Array<{
     version: string;
     documentCount: number;
@@ -36,18 +37,21 @@ export class ListLibrariesTool {
 
     // The structure returned by listLibraries already matches LibraryInfo[]
     // No complex mapping is needed here anymore, just ensure the names match
-    const libraries: LibraryInfo[] = rawLibraries.map(({ library, versions }) => ({
-      name: library,
-      versions: versions.map((v: VersionSummary) => ({
-        version: v.ref.version,
-        documentCount: v.counts.documents,
-        uniqueUrlCount: v.counts.uniqueUrls,
-        indexedAt: v.indexedAt,
-        status: v.status,
-        ...(v.progress ? { progress: v.progress } : undefined),
-        sourceUrl: v.sourceUrl,
-      })),
-    }));
+    const libraries: LibraryInfo[] = rawLibraries.map(
+      ({ library, description, versions }) => ({
+        name: library,
+        description: description ?? null,
+        versions: versions.map((v: VersionSummary) => ({
+          version: v.ref.version,
+          documentCount: v.counts.documents,
+          uniqueUrlCount: v.counts.uniqueUrls,
+          indexedAt: v.indexedAt,
+          status: v.status,
+          ...(v.progress ? { progress: v.progress } : undefined),
+          sourceUrl: v.sourceUrl,
+        })),
+      }),
+    );
 
     return { libraries };
   }

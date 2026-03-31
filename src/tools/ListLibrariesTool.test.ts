@@ -79,6 +79,7 @@ describe("ListLibrariesTool", () => {
       libraries: [
         {
           name: "react",
+          description: null,
           versions: [
             {
               version: "18.2.0",
@@ -100,6 +101,7 @@ describe("ListLibrariesTool", () => {
         },
         {
           name: "vue",
+          description: null,
           versions: [
             {
               version: "3.2.0",
@@ -113,6 +115,7 @@ describe("ListLibrariesTool", () => {
         },
         {
           name: "old-lib",
+          description: null,
           versions: [
             {
               version: "1.0.0",
@@ -126,6 +129,7 @@ describe("ListLibrariesTool", () => {
         },
         {
           name: "unversioned-only",
+          description: null,
           versions: [
             {
               version: "",
@@ -139,6 +143,7 @@ describe("ListLibrariesTool", () => {
         },
         {
           name: "mixed-versions",
+          description: null,
           versions: [
             {
               version: "",

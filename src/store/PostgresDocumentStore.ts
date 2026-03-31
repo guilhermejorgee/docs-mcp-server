@@ -31,6 +31,7 @@ import {
   type DbPageChunk,
   type DbVersion,
   type DbVersionWithLibrary,
+  type LibrarySuggestion,
   normalizeVersionName,
   type VersionScraperOptions,
   type VersionStatus,
@@ -272,14 +273,21 @@ export class PostgresDocumentStore implements IDocumentStore {
   // Library / version resolution
   // ---------------------------------------------------------------------------
 
-  async resolveVersionId(library: string, version: string): Promise<number> {
+  async resolveVersionId(
+    library: string,
+    version: string,
+    description?: string | null,
+  ): Promise<number> {
     const normalizedLibrary = library.toLowerCase();
     const normalizedVersion = version.toLowerCase();
 
-    // Insert library if not exists
+    // Insert library if not exists, update description if provided
     await this.query(
-      "INSERT INTO libraries (name) VALUES ($1) ON CONFLICT (name) DO NOTHING",
-      [normalizedLibrary],
+      `INSERT INTO libraries (name, description)
+       VALUES ($1, $2)
+       ON CONFLICT (name) DO UPDATE
+         SET description = COALESCE(EXCLUDED.description, libraries.description)`,
+      [normalizedLibrary, description ?? null],
     );
 
     // Get library id
@@ -351,17 +359,37 @@ export class PostgresDocumentStore implements IDocumentStore {
     }
   }
 
-  async getLibrary(name: string): Promise<{ id: number; name: string } | null> {
+  async getLibrary(
+    name: string,
+  ): Promise<{ id: number; name: string; description: string | null } | null> {
     try {
       const normalizedName = name.toLowerCase();
-      const row = await this.queryOne<{ id: number }>(
-        "SELECT id FROM libraries WHERE name = $1",
+      const row = await this.queryOne<{ id: number; description: string | null }>(
+        "SELECT id, description FROM libraries WHERE name = $1",
         [normalizedName],
       );
       if (!row) return null;
-      return { id: row.id, name: normalizedName };
+      return { id: row.id, name: normalizedName, description: row.description ?? null };
     } catch (error) {
       throw new StoreError(`Failed to get library by name: ${error}`);
+    }
+  }
+
+  async findLibraries(query: string, limit: number): Promise<LibrarySuggestion[]> {
+    try {
+      const rows = await this.query<{ name: string; description: string | null }>(
+        `SELECT name, description,
+                ts_rank_cd(fts_vector, plainto_tsquery('multilingual', $1)) AS score
+         FROM libraries
+         WHERE fts_vector @@ plainto_tsquery('multilingual', $1)
+            OR similarity(name, $1) > 0.3
+         ORDER BY score DESC
+         LIMIT $2`,
+        [query, limit],
+      );
+      return rows.map((r) => ({ name: r.name, description: r.description ?? null }));
+    } catch (error) {
+      throw new StoreError(`Failed to find libraries: ${error}`);
     }
   }
 
@@ -528,12 +556,14 @@ export class PostgresDocumentStore implements IDocumentStore {
         documentCount: number;
         uniqueUrlCount: number;
         indexedAt: string | null;
+        description: string | null;
       }>
     >
   > {
     try {
       const rows = await this.query<DbLibraryVersion>(
         `SELECT l.name as library,
+                l.description as description,
                 COALESCE(v.name, '') as version,
                 v.id as "versionId",
                 v.status as status,
@@ -547,7 +577,7 @@ export class PostgresDocumentStore implements IDocumentStore {
          JOIN libraries l ON v.library_id = l.id
          LEFT JOIN pages p ON p.version_id = v.id
          LEFT JOIN documents d ON d.page_id = p.id
-         GROUP BY v.id, l.name, v.name, v.status, v.progress_pages, v.progress_max_pages, v.source_url
+         GROUP BY v.id, l.name, l.description, v.name, v.status, v.progress_pages, v.progress_max_pages, v.source_url
          ORDER BY l.name, version`,
       );
 
@@ -563,6 +593,7 @@ export class PostgresDocumentStore implements IDocumentStore {
           documentCount: number;
           uniqueUrlCount: number;
           indexedAt: string | null;
+          description: string | null;
         }>
       >();
 
@@ -584,6 +615,7 @@ export class PostgresDocumentStore implements IDocumentStore {
           documentCount: Number(row.documentCount),
           uniqueUrlCount: Number(row.uniqueUrlCount),
           indexedAt: indexedAtISO,
+          description: row.description ?? null,
         });
       }
 
@@ -888,24 +920,26 @@ export class PostgresDocumentStore implements IDocumentStore {
       const sql = `
           SELECT d.id::text, d.page_id, d.content, d.metadata, d.sort_order, d.created_at,
                  p.url, p.title, p.source_content_type, p.content_type,
-                 ts_rank_cd(d.fts_vector, ${tsquery}) as fts_score
+                 (ts_rank_cd(d.fts_vector, ${tsquery}) * 0.8
+                  + COALESCE(similarity(p.title, $1), 0) * 0.2) AS combined_score
           FROM documents d
           JOIN pages p ON d.page_id = p.id
           JOIN versions v ON p.version_id = v.id
           JOIN libraries l ON v.library_id = l.id
           WHERE l.name = $2 AND v.name = $3
-            AND d.fts_vector @@ (${tsquery})
+            AND (
+              d.fts_vector @@ (${tsquery})
+              OR similarity(p.title, $1) > 0.25
+            )
             AND NOT (d.metadata->'types' @> '["structural"]'::jsonb)
-          ORDER BY fts_score DESC
+          ORDER BY combined_score DESC
           LIMIT $4
         `;
 
-      const rawResults = await this.query<RawSearchResult & { fts_score: number }>(sql, [
-        query,
-        normalizedLibrary,
-        normalizedVersion,
-        limit,
-      ]);
+      const rawResults = await this.query<RawSearchResult & { combined_score: number }>(
+        sql,
+        [query, normalizedLibrary, normalizedVersion, limit],
+      );
 
       return rawResults.map((row, index) => {
         const chunk = this.normalizeChunkRow({
@@ -916,7 +950,7 @@ export class PostgresDocumentStore implements IDocumentStore {
           content_type: row.content_type ?? null,
         }) as DbPageChunk;
         return Object.assign(chunk, {
-          score: row.fts_score,
+          score: row.combined_score,
           fts_rank: index + 1,
         });
       });

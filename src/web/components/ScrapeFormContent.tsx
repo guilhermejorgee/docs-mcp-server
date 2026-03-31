@@ -9,6 +9,7 @@ import Tooltip from "./Tooltip";
  */
 export interface ScrapeFormInitialValues {
   library?: string;
+  description?: string;
   url?: string;
   maxPages?: number;
   maxDepth?: number;
@@ -47,6 +48,7 @@ const ScrapeFormContent = ({
   // Use initial values or defaults
   const urlValue = initialValues?.url || "";
   const libraryValue = initialValues?.library || "";
+  const descriptionValue = initialValues?.description || "";
   const maxPagesValue = initialValues?.maxPages?.toString() || "";
   const maxDepthValue = initialValues?.maxDepth?.toString() || "";
   const scopeValue = initialValues?.scope || "subpages";
@@ -217,6 +219,26 @@ const ScrapeFormContent = ({
               class="mt-0.5 block w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
           )}
+        </div>
+        <div>
+          <div class="flex items-center">
+            <label
+              for="description"
+              class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
+              Description
+            </label>
+            <Tooltip text="A short description of this library. Used to help AI agents discover and identify the right documentation." />
+          </div>
+          <input
+            type="text"
+            name="description"
+            id="description"
+            required
+            value={descriptionValue}
+            placeholder="e.g. React is a JavaScript library for building user interfaces"
+            class="mt-0.5 block w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          />
         </div>
         <div>
           <div class="flex items-center">

@@ -121,6 +121,11 @@ export function createScrapeCommand(cli: Argv) {
           description: "Clear existing documents before scraping",
           default: true,
         })
+        .option("description", {
+          type: "string",
+          description: "Short description of the library content (used for discovery)",
+          alias: "desc",
+        })
         .usage(
           "$0 scrape <library> <url> [options]\n\n" +
             "Scrape and index documentation from a URL or local folder.\n\n" +
@@ -247,6 +252,7 @@ export function createScrapeCommand(cli: Argv) {
                 : undefined,
             headers: Object.keys(headers).length > 0 ? headers : undefined,
             clean: argv.clean as boolean,
+            description: argv.description as string | undefined,
           },
         });
 

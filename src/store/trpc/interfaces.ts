@@ -7,11 +7,14 @@ import type { EmbeddingModelConfig } from "../embeddings/EmbeddingConfig";
 import type {
   DbVersionWithLibrary,
   FindVersionResult,
+  LibrarySuggestion,
   LibrarySummary,
   StoredScraperOptions,
   StoreSearchResult,
   VersionStatus,
 } from "../types";
+
+export type { LibrarySuggestion };
 
 export interface IDocumentManagement {
   // Lifecycle
@@ -21,6 +24,7 @@ export interface IDocumentManagement {
   // Library/version introspection used by tools/UI
   listLibraries(): Promise<LibrarySummary[]>;
   validateLibraryExists(library: string): Promise<void>;
+  findLibraries(query: string, limit?: number): Promise<LibrarySuggestion[]>;
   findBestVersion(library: string, targetVersion?: string): Promise<FindVersionResult>;
 
   // Search & mutation used by tools/UI

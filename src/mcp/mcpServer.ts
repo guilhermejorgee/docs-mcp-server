@@ -1,6 +1,7 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v3";
 import { PipelineJobStatus } from "../pipeline/types";
+import { LibraryNotFoundInStoreError } from "../store/errors";
 import { TelemetryEvent, telemetry } from "../telemetry";
 import type { JobInfo } from "../tools";
 import { ToolError } from "../tools/errors";
@@ -45,6 +46,11 @@ export function createMcpServerInstance(
         url: z.string().url().describe("Documentation root URL to scrape."),
         library: z.string().trim().describe("Library name."),
         version: z.string().trim().optional().describe("Library version (optional)."),
+        description: z
+          .string()
+          .trim()
+          .optional()
+          .describe("Short description of the library for discovery (optional)."),
         maxPages: z
           .number()
           .optional()
@@ -73,7 +79,16 @@ export function createMcpServerInstance(
         destructiveHint: true, // replaces existing docs
         openWorldHint: true, // requires internet access
       },
-      async ({ url, library, version, maxPages, maxDepth, scope, followRedirects }) => {
+      async ({
+        url,
+        library,
+        version,
+        description,
+        maxPages,
+        maxDepth,
+        scope,
+        followRedirects,
+      }) => {
         // Track MCP tool usage
         telemetry.track(TelemetryEvent.TOOL_USED, {
           tool: "scrape_docs",
@@ -99,6 +114,7 @@ export function createMcpServerInstance(
               maxDepth,
               scope,
               followRedirects,
+              description,
             },
           });
 
@@ -258,7 +274,49 @@ ${r.content}\n`,
         }
 
         return createResponse(
-          `Indexed libraries:\n\n${result.libraries.map((lib: { name: string }) => `- ${lib.name}`).join("\n")}`,
+          `Indexed libraries:\n\n${result.libraries
+            .map(
+              (lib: { name: string; description?: string | null }) =>
+                `- ${lib.name}${lib.description ? ` — ${lib.description}` : ""}`,
+            )
+            .join("\n")}`,
+        );
+      } catch (error) {
+        return createError(error);
+      }
+    },
+  );
+
+  // Find library tool
+  server.tool(
+    "find_library",
+    "Find libraries in the index matching a search query. Use this to discover available libraries by name or description.",
+    {
+      query: z.string().trim().describe("Search query to find matching libraries."),
+      limit: z.number().optional().default(5).describe("Maximum number of results."),
+    },
+    {
+      title: "Find Library",
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
+    async ({ query, limit }) => {
+      telemetry.track(TelemetryEvent.TOOL_USED, {
+        tool: "find_library",
+        context: "mcp_server",
+      });
+
+      try {
+        const result = await tools.findLibrary.execute({ query, limit });
+        if (result.libraries.length === 0) {
+          return createResponse(`No libraries found matching '${query}'.`);
+        }
+        return createResponse(
+          `Libraries matching '${query}':\n\n${result.libraries
+            .map(
+              (lib) => `- ${lib.name}${lib.description ? ` — ${lib.description}` : ""}`,
+            )
+            .join("\n")}`,
         );
       } catch (error) {
         return createError(error);

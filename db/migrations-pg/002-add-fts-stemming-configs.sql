@@ -1,4 +1,4 @@
--- Migration 014: Add language-specific FTS text search configurations
+-- Migration 002: Add language-specific FTS text search configurations
 -- Creates pt_unaccent (Portuguese + unaccent) and en_unaccent (English + unaccent)
 -- configurations used when ftsLanguages config includes "portuguese" or "english".
 -- These configs combine the built-in language stemmer with accent normalisation.

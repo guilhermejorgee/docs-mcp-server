@@ -32,6 +32,11 @@ const LibraryItem = ({ library }: LibraryItemProps) => {
           <span safe>{library.name}</span>
         </a>
       </h3>
+      {library.description ? (
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5" safe>
+          {library.description}
+        </p>
+      ) : null}
       {latestVersion?.sourceUrl ? (
         <div class="text-sm text-gray-500 dark:text-gray-400 overflow-hidden h-5 @container">
           <a

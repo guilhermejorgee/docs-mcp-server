@@ -1,4 +1,4 @@
--- Migration 008: Case-insensitive names normalization
+-- Migration 001: Case-insensitive names normalization
 -- Names are stored lowercase by convention; these indexes enforce uniqueness
 -- and provide efficient case-insensitive lookups.
 

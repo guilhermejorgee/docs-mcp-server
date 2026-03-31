@@ -1,5 +1,4 @@
 import type { Embeddings } from "@langchain/core/embeddings";
-import Fuse from "fuse.js";
 import semver from "semver";
 import type { EventBusService } from "../events";
 import { EventType } from "../events";
@@ -25,6 +24,7 @@ import type { IDocumentStore } from "./IDocumentStore";
 import type {
   DbVersionWithLibrary,
   FindVersionResult,
+  LibrarySuggestion,
   LibrarySummary,
   ScraperConfig,
   StoreSearchResult,
@@ -165,6 +165,7 @@ export class DocumentManagementService {
     const libMap = await this.store.queryLibraryVersions();
     const summaries: LibrarySummary[] = [];
     for (const [library, versions] of libMap) {
+      const firstVersion = versions[0];
       const vs = versions.map(
         (v) =>
           ({
@@ -181,7 +182,11 @@ export class DocumentManagementService {
             sourceUrl: v.sourceUrl ?? undefined,
           }) satisfies VersionSummary,
       );
-      summaries.push({ library, versions: vs });
+      summaries.push({
+        library,
+        description: firstVersion?.description ?? null,
+        versions: vs,
+      });
     }
     return summaries;
   }
@@ -191,6 +196,13 @@ export class DocumentManagementService {
    */
   async findVersionsBySourceUrl(url: string): Promise<DbVersionWithLibrary[]> {
     return this.store.findVersionsBySourceUrl(url);
+  }
+
+  /**
+   * Finds libraries matching the given query using FTS and trigram similarity.
+   */
+  async findLibraries(query: string, limit = 5): Promise<LibrarySuggestion[]> {
+    return this.store.findLibraries(query, limit);
   }
 
   /**
@@ -209,20 +221,8 @@ export class DocumentManagementService {
     if (!libraryRecord) {
       logger.warn(`⚠️  Library '${library}' not found.`);
 
-      // Library doesn't exist, fetch all libraries to provide suggestions
-      const allLibraries = await this.listLibraries();
-      const libraryNames = allLibraries.map((lib) => lib.library);
-
-      let suggestions: string[] = [];
-      if (libraryNames.length > 0) {
-        const fuse = new Fuse(libraryNames, {
-          threshold: 0.7, // Adjust threshold for desired fuzziness (0=exact, 1=match anything)
-        });
-        const results = fuse.search(library.toLowerCase());
-        // Take top 3 suggestions
-        suggestions = results.slice(0, 3).map((result) => result.item);
-        logger.info(`🔍 Found suggestions: ${suggestions.join(", ")}`);
-      }
+      const suggestions = await this.store.findLibraries(library, 3);
+      logger.info(`🔍 Found suggestions: ${suggestions.map((s) => s.name).join(", ")}`);
 
       throw new LibraryNotFoundInStoreError(library, suggestions);
     }
@@ -429,7 +429,10 @@ export class DocumentManagementService {
     version: string | null | undefined,
     depth: number,
     result: ScrapeResult,
-    scraperOptions?: Pick<ScraperOptions, "chunkingStrategy" | "semanticThreshold">,
+    scraperOptions?: Pick<
+      ScraperOptions,
+      "chunkingStrategy" | "semanticThreshold" | "description"
+    >,
   ): Promise<void> {
     const processingStart = performance.now();
     const normalizedVersion = this.normalizeVersion(version);
@@ -443,6 +446,15 @@ export class DocumentManagementService {
     if (chunks.length === 0) {
       logger.warn(`⚠️  No chunks in processed content for ${url}. Skipping.`);
       return;
+    }
+
+    // If a description was provided, store it on the library record via resolveVersionId upsert
+    if (scraperOptions?.description !== undefined) {
+      await this.store.resolveVersionId(
+        library.toLowerCase(),
+        normalizedVersion,
+        scraperOptions.description,
+      );
     }
 
     let finalResult = result;

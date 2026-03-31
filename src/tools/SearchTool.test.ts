@@ -241,7 +241,10 @@ describe("SearchTool", () => {
 
   it("should throw LibraryNotFoundInStoreError and include suggestions", async () => {
     const options: SearchToolOptions = { ...baseOptions };
-    const similarLibraries = ["test-lib-correct", "another-test-lib"];
+    const similarLibraries = [
+      { name: "test-lib-correct", description: null },
+      { name: "another-test-lib", description: null },
+    ];
     const error = new LibraryNotFoundInStoreError("test-lib", similarLibraries);
     (mockDocService.validateLibraryExists as Mock).mockRejectedValue(error);
 

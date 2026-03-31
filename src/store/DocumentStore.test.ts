@@ -1458,10 +1458,14 @@ describe("DocumentStore - Common Functionality", () => {
         10,
       );
 
-      // Should find documents containing both "programming" AND the phrase "design patterns"
+      // Should find a document containing both "programming" AND the phrase "design patterns"
       expect(results.length).toBeGreaterThan(0);
-      expect(results[0].content).toContain("programming");
-      expect(results[0].content).toContain("design patterns");
+      const match = results.find(
+        (r) =>
+          r.content.toLowerCase().includes("programming") &&
+          r.content.includes("design patterns"),
+      );
+      expect(match).toBeDefined();
     });
 
     it("should treat FTS operators as literal keywords when in unquoted position", async () => {

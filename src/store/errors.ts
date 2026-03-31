@@ -25,11 +25,11 @@ export class StoreError extends Error {
 export class LibraryNotFoundInStoreError extends StoreError {
   constructor(
     public readonly library: string,
-    public readonly similarLibraries: string[] = [],
+    public readonly similarLibraries: import("./types").LibrarySuggestion[] = [],
   ) {
     let text = `Library ${library} not found in store.`;
     if (similarLibraries.length > 0) {
-      text += ` Did you mean: ${similarLibraries.join(", ")}?`;
+      text += ` Did you mean: ${similarLibraries.map((s) => s.name).join(", ")}?`;
     }
     super(text);
   }

@@ -102,7 +102,26 @@ Custom configurations (e.g. `pt_unaccent`, `en_unaccent`) are also accepted.
 - Existing documents must be re-indexed (run a refresh) for new language configs to take effect
 - Morphological variants are found; cross-language queries (Portuguese query → English content) still require semantic search (embeddings)
 
-**Default:** `["simple"]` — only the `multilingual` base config is used, preserving existing behavior.
+**Default:** `["pt_unaccent", "en_unaccent"]` — bilingual stemming with accent normalisation for Portuguese and English is enabled by default.
+
+---
+
+## Hybrid Search: Trigram Similarity on Title (migration 003)
+
+Migration `003` enables the `pg_trgm` PostgreSQL extension and creates a GIN trigram
+index on `pages.title`. This powers typo-tolerant title matching:
+
+- Queries with minor typos (e.g., `useEfect`) will still surface pages whose titles
+  closely match (similarity > 0.25).
+- Search scores become a blend: **80% FTS relevance + 20% title similarity**.
+- If FTS finds no token match but the title is similar enough, results are still returned.
+
+### Re-indexing after `ftsLanguages` change
+
+The `fts_vector` column is computed at document INSERT time. If you change
+`search.ftsLanguages` in your config (e.g., to activate bilingual stemming), documents
+already in the database will not be updated automatically. To apply the new stemming
+configuration to existing data, remove and re-scrape the affected libraries.
 
 ---
 

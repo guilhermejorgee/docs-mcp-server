@@ -72,6 +72,10 @@ export interface ScrapeToolOptions {
      * Range: [0, 1]
      */
     semanticThreshold?: number;
+    /**
+     * Short description of the library content used for discovery via find_library.
+     */
+    description?: string;
   };
   /** If false, returns jobId immediately without waiting. Defaults to true. */
   waitForCompletion?: boolean;
@@ -167,6 +171,7 @@ export class ScrapeTool {
       clean: scraperOptions?.clean, // <-- propagate clean option
       chunkingStrategy: scraperOptions?.chunkingStrategy ?? "default",
       semanticThreshold: scraperOptions?.semanticThreshold,
+      description: scraperOptions?.description,
     });
 
     // Conditionally wait for completion

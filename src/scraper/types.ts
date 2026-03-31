@@ -133,6 +133,10 @@ export interface ScraperOptions {
    * Range: [0, 1]
    */
   semanticThreshold?: number;
+  /**
+   * Short description of the library content used for discovery via find_library.
+   */
+  description?: string | null;
 }
 
 /**

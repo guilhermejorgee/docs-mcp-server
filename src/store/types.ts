@@ -173,10 +173,19 @@ export interface VersionSummary {
 }
 
 /**
+ * Represents a library suggestion returned when a library is not found.
+ */
+export interface LibrarySuggestion {
+  name: string;
+  description: string | null;
+}
+
+/**
  * Summary of a library and its versions for API/UI consumption.
  */
 export interface LibrarySummary {
   library: string;
+  description?: string | null;
   versions: VersionSummary[];
 }
 
@@ -283,6 +292,7 @@ export function isActiveStatus(status: VersionStatus): boolean {
  */
 export interface DbLibraryVersion {
   library: string;
+  description: string | null;
   version: string;
   versionId: number;
   status: VersionStatus;

@@ -118,7 +118,7 @@ export const DEFAULT_CONFIG = {
     weightVec: 1,
     weightFts: 1,
     vectorMultiplier: 10,
-    ftsLanguages: ["simple"] as string[],
+    ftsLanguages: ["pt_unaccent", "en_unaccent"] as string[],
   },
   sandbox: {
     defaultTimeoutMs: 5000,

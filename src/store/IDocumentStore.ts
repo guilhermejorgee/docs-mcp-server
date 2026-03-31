@@ -7,6 +7,7 @@ import type {
   DbPageChunk,
   DbVersion,
   DbVersionWithLibrary,
+  LibrarySuggestion,
   StoredScraperOptions,
   VersionStatus,
 } from "./types";
@@ -23,11 +24,18 @@ export interface IDocumentStore {
   shutdown(): Promise<void>;
 
   // Library / version resolution
-  resolveVersionId(library: string, version: string): Promise<number>;
+  resolveVersionId(
+    library: string,
+    version: string,
+    description?: string | null,
+  ): Promise<number>;
   queryUniqueVersions(library: string): Promise<string[]>;
   getVersionById(versionId: number): Promise<DbVersion | null>;
   getLibraryById(libraryId: number): Promise<{ id: number; name: string } | null>;
-  getLibrary(name: string): Promise<{ id: number; name: string } | null>;
+  getLibrary(
+    name: string,
+  ): Promise<{ id: number; name: string; description: string | null } | null>;
+  findLibraries(query: string, limit: number): Promise<LibrarySuggestion[]>;
   deleteLibrary(libraryId: number): Promise<void>;
 
   // Version status & progress
@@ -63,6 +71,7 @@ export interface IDocumentStore {
         documentCount: number;
         uniqueUrlCount: number;
         indexedAt: string | null;
+        description: string | null;
       }>
     >
   >;

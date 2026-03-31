@@ -1,4 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { LibraryNotFoundInStoreError } from "../store/errors";
 
 /**
  * Creates a success response object in the format expected by the MCP server.
@@ -23,7 +24,20 @@ export function createResponse(text: string): CallToolResult {
  * @returns The response object.
  */
 export function createError(errorOrText: unknown): CallToolResult {
-  const text = errorOrText instanceof Error ? errorOrText.message : String(errorOrText);
+  let text: string;
+  if (errorOrText instanceof LibraryNotFoundInStoreError) {
+    const suggestions = errorOrText.similarLibraries;
+    if (suggestions.length > 0) {
+      const suggestionList = suggestions
+        .map((s) => `- ${s.name}${s.description ? ` — ${s.description}` : ""}`)
+        .join("\n");
+      text = `${errorOrText.message}\n\nSuggestions:\n${suggestionList}`;
+    } else {
+      text = errorOrText.message;
+    }
+  } else {
+    text = errorOrText instanceof Error ? errorOrText.message : String(errorOrText);
+  }
   return {
     content: [
       {

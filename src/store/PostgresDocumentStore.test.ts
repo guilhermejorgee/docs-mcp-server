@@ -565,5 +565,144 @@ describe("PostgresDocumentStore", () => {
         await s.shutdown();
       }
     });
+
+    it("buildFtsTsquerySql with ['pt_unaccent', 'en_unaccent'] includes both language tsqueries", () => {
+      const s = storeWithLangs(["pt_unaccent", "en_unaccent"]);
+      const sql = (
+        s as unknown as { buildFtsTsquerySql: (langs: string[]) => string }
+      ).buildFtsTsquerySql(["pt_unaccent", "en_unaccent"]);
+      expect(sql).toContain("plainto_tsquery('pt_unaccent'");
+      expect(sql).toContain("plainto_tsquery('en_unaccent'");
+    });
+
+    it("en_unaccent stemmer: query 'configure' finds document containing 'configuration'", async () => {
+      const s = storeWithLangs(["pt_unaccent", "en_unaccent"]);
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "en-unaccent-lib",
+          "1.0",
+          0,
+          createScrapeResult(
+            "Guide",
+            "https://example.com/en-unaccent",
+            "The configuration of the system is straightforward",
+          ),
+        );
+        const results = await s.findByContent("en-unaccent-lib", "1.0", "configure", 5);
+        expect(results.length).toBeGreaterThan(0);
+        expect(results[0].content).toContain("configuration");
+      } finally {
+        await s.shutdown();
+      }
+    });
+
+    it("pt_unaccent stemmer: query 'instalar' finds document containing 'instalando'", async () => {
+      const s = storeWithLangs(["pt_unaccent", "en_unaccent"]);
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "pt-unaccent-lib",
+          "1.0",
+          0,
+          createScrapeResult(
+            "Guia",
+            "https://example.com/pt-unaccent",
+            "Instalando o sistema facilmente",
+          ),
+        );
+        const results = await s.findByContent("pt-unaccent-lib", "1.0", "instalar", 5);
+        expect(results.length).toBeGreaterThan(0);
+        expect(results[0].content).toContain("Instalando");
+      } finally {
+        await s.shutdown();
+      }
+    });
+  });
+
+  describe("hybrid FTS + trigram search", () => {
+    function storeForHybrid() {
+      return new PostgresDocumentStore(container.connectionString, pgConfig());
+    }
+
+    it("typo in query finds by trigram fallback", async () => {
+      const s = storeForHybrid();
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "hybrid-lib-typo",
+          "1.0",
+          0,
+          createScrapeResult(
+            "useEffect Hook Guide",
+            "https://example.com/useeffect-typo",
+            "How to use useEffect in React functional components",
+          ),
+        );
+        const results = await s.findByContent("hybrid-lib-typo", "1.0", "useEfect", 5);
+        expect(results.length).toBeGreaterThan(0);
+        expect(results[0].title).toContain("useEffect");
+      } finally {
+        await s.shutdown();
+      }
+    });
+
+    it("exact FTS match ranks highest when querying exact term", async () => {
+      const s = storeForHybrid();
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "hybrid-lib-rank",
+          "1.0",
+          0,
+          createScrapeResult(
+            "useEffect Hook Guide",
+            "https://example.com/useeffect-rank",
+            "Detailed guide on useEffect hook usage",
+          ),
+        );
+        await s.addDocuments(
+          "hybrid-lib-rank",
+          "1.0",
+          0,
+          createScrapeResult(
+            "React Hooks Overview",
+            "https://example.com/hooks-overview",
+            "Overview of all React hooks including useState and useReducer",
+          ),
+        );
+        const results = await s.findByContent("hybrid-lib-rank", "1.0", "useEffect", 5);
+        expect(results.length).toBeGreaterThan(0);
+        expect(results[0].title).toContain("useEffect");
+      } finally {
+        await s.shutdown();
+      }
+    });
+
+    it("trigram does not surface completely unrelated titles", async () => {
+      const s = storeForHybrid();
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "hybrid-lib-unrelated",
+          "1.0",
+          0,
+          createScrapeResult(
+            "Unrelated Topic",
+            "https://example.com/unrelated",
+            "This document has nothing to do with React hooks",
+          ),
+        );
+        const results = await s.findByContent(
+          "hybrid-lib-unrelated",
+          "1.0",
+          "useEffect",
+          5,
+        );
+        expect(results.every((r) => r.title !== "Unrelated Topic")).toBe(true);
+      } finally {
+        await s.shutdown();
+      }
+    });
   });
 });
