@@ -405,4 +405,165 @@ describe("PostgresDocumentStore", () => {
       expect(versions.some((v) => v.id === versionId)).toBe(true);
     });
   });
+
+  describe("FTS stemming (with language configs)", () => {
+    function storeWithLangs(langs: string[]) {
+      const cfg = {
+        ...pgConfig(),
+        search: { ...pgConfig().search, ftsLanguages: langs },
+      };
+      return new PostgresDocumentStore(container.connectionString, cfg);
+    }
+
+    it("English stemmer: query 'install' finds document containing 'Installation'", async () => {
+      const s = storeWithLangs(["english"]);
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "en-stem-lib",
+          "1.0",
+          0,
+          createScrapeResult(
+            "Guide",
+            "https://example.com/en-stem",
+            "Installation of dependencies is straightforward",
+          ),
+        );
+        const results = await s.findByContent("en-stem-lib", "1.0", "install", 5);
+        expect(results.length).toBeGreaterThan(0);
+        expect(results[0].content).toContain("Installation");
+      } finally {
+        await s.shutdown();
+      }
+    });
+
+    it("English stemmer: query 'dependency' finds document containing 'dependencies'", async () => {
+      const s = storeWithLangs(["english"]);
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "en-stem-lib2",
+          "1.0",
+          0,
+          createScrapeResult(
+            "Guide",
+            "https://example.com/en-stem2",
+            "Managing dependencies in a modern project",
+          ),
+        );
+        const results = await s.findByContent("en-stem-lib2", "1.0", "dependency", 5);
+        expect(results.length).toBeGreaterThan(0);
+        expect(results[0].content).toContain("dependencies");
+      } finally {
+        await s.shutdown();
+      }
+    });
+
+    it("Portuguese stemmer: query 'configurar' finds document containing 'Configuração'", async () => {
+      const s = storeWithLangs(["portuguese"]);
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "pt-stem-lib",
+          "1.0",
+          0,
+          createScrapeResult(
+            "Guia",
+            "https://example.com/pt-stem",
+            "Configuração do ambiente de desenvolvimento",
+          ),
+        );
+        const results = await s.findByContent("pt-stem-lib", "1.0", "configurar", 5);
+        expect(results.length).toBeGreaterThan(0);
+        expect(results[0].content).toContain("Configuração");
+      } finally {
+        await s.shutdown();
+      }
+    });
+
+    it("Portuguese stemmer: query 'biblioteca' finds document containing 'bibliotecas'", async () => {
+      const s = storeWithLangs(["portuguese"]);
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "pt-stem-lib2",
+          "1.0",
+          0,
+          createScrapeResult(
+            "Guia",
+            "https://example.com/pt-stem2",
+            "Gerenciamento de bibliotecas externas",
+          ),
+        );
+        const results = await s.findByContent("pt-stem-lib2", "1.0", "biblioteca", 5);
+        expect(results.length).toBeGreaterThan(0);
+        expect(results[0].content).toContain("bibliotecas");
+      } finally {
+        await s.shutdown();
+      }
+    });
+
+    it("Combined EN+PT: finds English-stemmed and Portuguese-stemmed documents", async () => {
+      const s = storeWithLangs(["english", "portuguese"]);
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "bilingual-lib",
+          "1.0",
+          0,
+          createScrapeResult(
+            "EN Doc",
+            "https://example.com/bilingual-en",
+            "Installing components in the application",
+          ),
+        );
+        await s.addDocuments(
+          "bilingual-lib",
+          "1.0",
+          0,
+          createScrapeResult(
+            "PT Doc",
+            "https://example.com/bilingual-pt",
+            "Instalação de componentes na aplicação",
+          ),
+        );
+        const enResults = await s.findByContent("bilingual-lib", "1.0", "install", 5);
+        expect(enResults.length).toBeGreaterThan(0);
+        expect(enResults.some((r) => r.content.includes("Installing"))).toBe(true);
+
+        const ptResults = await s.findByContent("bilingual-lib", "1.0", "instalar", 5);
+        expect(ptResults.length).toBeGreaterThan(0);
+        expect(ptResults.some((r) => r.content.includes("Instalação"))).toBe(true);
+      } finally {
+        await s.shutdown();
+      }
+    });
+
+    it("Default ['simple'] config: exact match still works (no behavior change)", async () => {
+      const s = storeWithLangs(["simple"]);
+      await s.initialize();
+      try {
+        await s.addDocuments(
+          "simple-lang-lib",
+          "1.0",
+          0,
+          createScrapeResult(
+            "Simple",
+            "https://example.com/simple",
+            "Vitest is a fast unit test framework",
+          ),
+        );
+        const results = await s.findByContent(
+          "simple-lang-lib",
+          "1.0",
+          "vitest unit test",
+          5,
+        );
+        expect(results.length).toBeGreaterThan(0);
+        expect(results[0].content).toContain("Vitest");
+      } finally {
+        await s.shutdown();
+      }
+    });
+  });
 });

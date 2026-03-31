@@ -28,7 +28,7 @@ Protocol selection is automatic - stdio transport for AI tools (no TTY), HTTP tr
 - Vitest for testing
 - HTMX, AlpineJS, TailwindCSS for web interface
 - LangChain.js for embeddings, Playwright for scraping
-- PostgreSQL with schema migrations (pgvector extension + tsvector FTS)
+- PostgreSQL with schema migrations (tsvector FTS)
 
 ## Configuration System
 

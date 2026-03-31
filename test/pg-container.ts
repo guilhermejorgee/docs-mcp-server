@@ -140,7 +140,7 @@ function createStandaloneContainer(): PgTestContainer {
     },
 
     async start() {
-      started = await new PostgreSqlContainer("pgvector/pgvector:pg16")
+      started = await new PostgreSqlContainer("postgres:16-alpine")
         .withDatabase("docs_mcp_test")
         .withUsername("test")
         .withPassword("test")

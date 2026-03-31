@@ -18,7 +18,7 @@ import { createPgContainer } from "./pg-container";
 
 const container = createPgContainer();
 
-describe("Vector persistence", () => {
+describe("Document persistence in PostgreSQL", () => {
   let tempDir: string;
   let pipeline: any;
   let docService: any;
@@ -30,7 +30,7 @@ describe("Vector persistence", () => {
   beforeAll(async () => {
     await container.start();
 
-    // Ensure vector search initializes in tests without requiring real credentials.
+    // Ensure embedding model initializes in tests without requiring real credentials.
     prevOpenAiApiKey = process.env.OPENAI_API_KEY;
     prevOpenAiApiBase = process.env.OPENAI_API_BASE;
 

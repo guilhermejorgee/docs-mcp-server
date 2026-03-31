@@ -416,7 +416,7 @@ describe("DocumentStore - With Embeddings", () => {
       );
     });
 
-    it("should perform hybrid search combining vector and FTS", async () => {
+    it("should perform hybrid search combining FTS and optional embeddings", async () => {
       const results = await store.findByContent(
         "searchtest",
         "1.0.0",
@@ -453,7 +453,7 @@ describe("DocumentStore - With Embeddings", () => {
       }
     });
 
-    it("should demonstrate semantic similarity through vector search", async () => {
+    it("should find relevant documents through content search", async () => {
       const results = await store.findByContent(
         "searchtest",
         "1.0.0",

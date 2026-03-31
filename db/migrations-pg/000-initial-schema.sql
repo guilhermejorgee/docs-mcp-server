@@ -1,12 +1,11 @@
 -- Migration 000: Initial PostgreSQL schema
 -- Equivalent to all foundational SQLite migrations (000–006, 009–012)
--- Uses pgvector for embeddings, GIN index for full-text search, HNSW for ANN
+-- Uses GIN index for full-text search
 
 -- ---------------------------------------------------------------------------
 -- Extensions
 -- ---------------------------------------------------------------------------
 
-CREATE EXTENSION IF NOT EXISTS vector;   -- pgvector: vector similarity search
 CREATE EXTENSION IF NOT EXISTS unaccent; -- accent-insensitive full-text search
 
 -- ---------------------------------------------------------------------------
@@ -74,7 +73,6 @@ CREATE TABLE IF NOT EXISTS documents (
   content     TEXT,
   metadata    JSONB,
   sort_order  INT NOT NULL,
-  embedding   vector(1536),
   fts_vector  tsvector,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
@@ -123,7 +121,3 @@ CREATE INDEX IF NOT EXISTS idx_documents_sort_order
 -- GIN index for full-text search on the pre-computed tsvector column
 CREATE INDEX IF NOT EXISTS idx_documents_fts
   ON documents USING GIN(fts_vector);
-
--- HNSW index for approximate nearest-neighbour vector search (cosine distance)
-CREATE INDEX IF NOT EXISTS idx_documents_embedding
-  ON documents USING hnsw(embedding vector_cosine_ops);

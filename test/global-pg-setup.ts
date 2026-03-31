@@ -15,7 +15,7 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 let container: StartedPostgreSqlContainer | null = null;
 
 export async function setup(): Promise<void> {
-  container = await new PostgreSqlContainer("pgvector/pgvector:pg16")
+  container = await new PostgreSqlContainer("postgres:16-alpine")
     .withDatabase("postgres")
     .withUsername("test")
     .withPassword("test")

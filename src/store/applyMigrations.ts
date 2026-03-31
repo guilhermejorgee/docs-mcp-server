@@ -15,7 +15,7 @@ const MIGRATIONS_TABLE = "_schema_migrations";
  * Migration history is tracked in the _schema_migrations table.
  *
  * @param pool The pg.Pool instance connected to the target database.
- * @throws {StoreError} If any migration fails or pgvector is not installed.
+ * @throws {StoreError} If any migration fails.
  */
 export async function applyMigrationsPg(pool: pg.Pool): Promise<void> {
   const migrationsDir = PG_MIGRATIONS_DIR;
@@ -77,16 +77,6 @@ export async function applyMigrationsPg(pool: pg.Pool): Promise<void> {
       logger.info(
         `✅ Successfully applied ${pendingMigrations.length} PostgreSQL migration(s)`,
       );
-
-      // Validate pgvector extension after migrations
-      const { rows: extRows } = await client.query(
-        "SELECT * FROM pg_extension WHERE extname = 'vector'",
-      );
-      if (extRows.length === 0) {
-        throw new StoreError(
-          "pgvector extension not found. Install it and run: CREATE EXTENSION vector;",
-        );
-      }
     } else {
       logger.debug("PostgreSQL schema is up to date");
     }

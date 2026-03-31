@@ -43,7 +43,7 @@ interface RawSearchResult extends DbChunk {
 }
 
 /**
- * Manages document storage and retrieval using PostgreSQL with pgvector and full-text search.
+ * Manages document storage and retrieval using PostgreSQL with full-text search.
  */
 export class PostgresDocumentStore implements IDocumentStore {
   private readonly config: AppConfig;
@@ -111,6 +111,46 @@ export class PostgresDocumentStore implements IDocumentStore {
   ): Promise<T | null> {
     const rows = await this.query<T>(sql, params);
     return rows[0] ?? null;
+  }
+
+  /**
+   * Builds the SQL expression for computing fts_vector on document insert.
+   * Always includes the `multilingual` config (exact match + unaccent) with
+   * weights A/B/C for title/path/content. Each additional language in `langs`
+   * (excluding `simple` and `multilingual`) adds a weight-D tsvector for the
+   * content field using that language's stemmer.
+   *
+   * Language identifiers are validated by the config schema before reaching
+   * here, so they are safe to embed directly as SQL identifiers.
+   */
+  private buildFtsTsvectorSql(langs: string[]): string {
+    const parts = [
+      "setweight(to_tsvector('multilingual', coalesce($5, '')), 'A')",
+      "setweight(to_tsvector('multilingual', coalesce($6, '')), 'B')",
+      "setweight(to_tsvector('multilingual', coalesce($7, '')), 'C')",
+    ];
+    for (const lang of langs) {
+      if (lang !== "simple" && lang !== "multilingual") {
+        parts.push(`to_tsvector('${lang}', coalesce($7, ''))`);
+      }
+    }
+    return parts.join(" ||\n                 ");
+  }
+
+  /**
+   * Builds the SQL tsquery expression used in WHERE and ranking clauses.
+   * Always includes `plainto_tsquery('multilingual', $1)` for exact/unaccent
+   * matching. Each additional language in `langs` (excluding `simple` and
+   * `multilingual`) adds an OR-combined tsquery using that language's stemmer.
+   */
+  private buildFtsTsquerySql(langs: string[]): string {
+    const parts = ["plainto_tsquery('multilingual', $1)"];
+    for (const lang of langs) {
+      if (lang !== "simple" && lang !== "multilingual") {
+        parts.push(`plainto_tsquery('${lang}', $1)`);
+      }
+    }
+    return parts.join(" || ");
   }
 
   private async initializeEmbeddings(): Promise<void> {
@@ -201,18 +241,7 @@ export class PostgresDocumentStore implements IDocumentStore {
       // 1. Run database migrations
       await applyMigrationsPg(this.pool);
 
-      // 2. Check pgvector extension is available
-      const extRow = await this.queryOne(
-        "SELECT * FROM pg_extension WHERE extname = 'vector'",
-      );
-      if (!extRow) {
-        throw new StoreError(
-          "pgvector extension is not installed. " +
-            "Please install it with: CREATE EXTENSION IF NOT EXISTS vector;",
-        );
-      }
-
-      // 3. Initialize embeddings client
+      // 2. Initialize embeddings client
       await this.initializeEmbeddings();
     } catch (error) {
       if (
@@ -646,12 +675,11 @@ export class PostgresDocumentStore implements IDocumentStore {
           const metadataJson = JSON.stringify(metadataObj);
 
           const pathStr = (chunk.section.path || []).join(" ");
+          const tsvectorSql = this.buildFtsTsvectorSql(this.config.search.ftsLanguages);
           await client.query(
             `INSERT INTO documents (page_id, content, metadata, sort_order, fts_vector)
                VALUES ($1, $2, $3::jsonb, $4,
-                 setweight(to_tsvector('multilingual', coalesce($5, '')), 'A') ||
-                 setweight(to_tsvector('multilingual', coalesce($6, '')), 'B') ||
-                 setweight(to_tsvector('multilingual', coalesce($7, '')), 'C'))`,
+                 ${tsvectorSql})`,
             [pageId, chunk.content, metadataJson, i, title || "", pathStr, chunk.content],
           );
         }
@@ -847,16 +875,17 @@ export class PostgresDocumentStore implements IDocumentStore {
       const normalizedLibrary = library.toLowerCase();
       const normalizedVersion = version.toLowerCase();
 
+      const tsquery = this.buildFtsTsquerySql(this.config.search.ftsLanguages);
       const sql = `
           SELECT d.id::text, d.page_id, d.content, d.metadata, d.sort_order, d.created_at,
                  p.url, p.title, p.source_content_type, p.content_type,
-                 ts_rank_cd(d.fts_vector, plainto_tsquery('multilingual', $1)) as fts_score
+                 ts_rank_cd(d.fts_vector, ${tsquery}) as fts_score
           FROM documents d
           JOIN pages p ON d.page_id = p.id
           JOIN versions v ON p.version_id = v.id
           JOIN libraries l ON v.library_id = l.id
           WHERE l.name = $2 AND v.name = $3
-            AND d.fts_vector @@ plainto_tsquery('multilingual', $1)
+            AND d.fts_vector @@ (${tsquery})
             AND NOT (d.metadata->'types' @> '["structural"]'::jsonb)
           ORDER BY fts_score DESC
           LIMIT $4

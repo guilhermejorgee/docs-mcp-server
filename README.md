@@ -125,7 +125,7 @@ See **[Embedding Models](docs/guides/embedding-models.md)** for configuring **Ol
 
 ### 🐘 PostgreSQL Backend
 
-The server requires **PostgreSQL** (version 14 or newer) with the [pgvector](https://github.com/pgvector/pgvector) extension. Configure the database connection:
+The server requires **PostgreSQL** (version 14 or newer). Configure the database connection:
 
 ```bash
 DATABASE_URL=postgresql://user:pass@host:5432/mydb \
@@ -133,7 +133,7 @@ DOCS_MCP_BACKEND=postgresql \
 npx @arabold/docs-mcp-server@latest
 ```
 
-Requirements: PostgreSQL 14+ with [pgvector](https://github.com/pgvector/pgvector) extension installed.
+Requirements: PostgreSQL 14+.
 
 See **[PostgreSQL Backend](docs/deployment/postgresql.md)** for the full setup guide.
 

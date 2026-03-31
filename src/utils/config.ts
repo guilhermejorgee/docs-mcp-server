@@ -280,7 +280,16 @@ export const AppConfigSchema = z.object({
         .number()
         .int()
         .default(DEFAULT_CONFIG.search.vectorMultiplier),
-      ftsLanguages: z.array(z.string()).default(DEFAULT_CONFIG.search.ftsLanguages),
+      ftsLanguages: z
+        .array(
+          z
+            .string()
+            .regex(
+              /^[a-z_][a-z0-9_]*$/,
+              "ftsLanguages entries must be valid PostgreSQL text search config identifiers (lowercase letters, digits, underscores)",
+            ),
+        )
+        .default(DEFAULT_CONFIG.search.ftsLanguages),
     })
     .default(DEFAULT_CONFIG.search),
   sandbox: z

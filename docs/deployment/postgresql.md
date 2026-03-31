@@ -4,7 +4,6 @@
 
 - Concurrent write access from multiple server processes
 - Standard managed-database tooling (backups, monitoring, connection pooling)
-- Native vector search via [pgvector](https://github.com/pgvector/pgvector)
 - Language-agnostic full-text search via `tsvector` with `unaccent` extension
 
 ---
@@ -14,50 +13,9 @@
 | Requirement | Version |
 |---|---|
 | PostgreSQL | 14+ (16 recommended) |
-| pgvector extension | 0.5+ |
 
 > **Note:** Both managed services (Supabase, Neon, RDS, Cloud SQL) and self-hosted PostgreSQL
-> work as long as pgvector is available.
-
----
-
-## Install pgvector
-
-### Docker (recommended for development)
-
-```bash
-docker run -d \
-  --name docs-pg \
-  -e POSTGRES_PASSWORD=secret \
-  -p 5432:5432 \
-  pgvector/pgvector:pg16
-```
-
-### Ubuntu / Debian
-
-```bash
-sudo apt install postgresql-16-pgvector
-```
-
-Then enable it in your database:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
-
-### Homebrew (macOS)
-
-```bash
-brew install pgvector
-```
-
-### Supabase / Neon / Managed Services
-
-pgvector is typically pre-installed. Enable it via the SQL editor:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
+> work out of the box.
 
 ---
 
@@ -115,15 +73,36 @@ This works correctly for both Portuguese and English content.
 
 ### Optional: bilingual stemming
 
-For advanced users who want language-specific stemming, configure `ftsLanguages`:
+For language-specific stemming, configure `ftsLanguages`:
 
 ```yaml
 search:
   ftsLanguages: ["english", "portuguese"]
 ```
 
-This indexes each document with two tsvectors (one per language), applying the correct stemmer
-for each. The index size doubles, but prefix search and stemming quality improve for both languages.
+When set, each document chunk is indexed with the `multilingual` base configuration **plus** an
+additional tsvector for each configured language using its built-in PostgreSQL stemmer. At query
+time all configured tsqueries are OR-combined, so a search for `"install"` will match documents
+containing `"installation"` (English stem) and `"configurar"` will match `"configuração"` (Portuguese stem).
+
+**How it works:**
+
+| Layer | Config | Weights | Purpose |
+|---|---|---|---|
+| Base | `multilingual` (simple + unaccent) | A / B / C | Exact & accent-insensitive match (always present) |
+| Stemmed | e.g. `english`, `portuguese` | D | Morphological variants (optional, per language) |
+
+**Built-in languages supported:** Any PostgreSQL text search configuration name — `english`,
+`portuguese`, `french`, `german`, `spanish`, `italian`, `dutch`, `russian`, and more.
+Custom configurations (e.g. `pt_unaccent`, `en_unaccent`) are also accepted.
+
+**Trade-offs:**
+
+- Index size grows proportionally to the number of configured languages (≈ +1× per language for content field)
+- Existing documents must be re-indexed (run a refresh) for new language configs to take effect
+- Morphological variants are found; cross-language queries (Portuguese query → English content) still require semantic search (embeddings)
+
+**Default:** `["simple"]` — only the `multilingual` base config is used, preserving existing behavior.
 
 ---
 
@@ -143,7 +122,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: pgvector/pgvector:pg16
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: docs
       POSTGRES_PASSWORD: secret
@@ -172,14 +151,6 @@ The server's internal pool should be sized to match what your external pooler al
 ---
 
 ## Troubleshooting
-
-### `pgvector extension not found`
-
-The `vector` extension is not installed or not enabled for the target database.
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
 
 ### `missing required db.postgresql.connectionString`
 

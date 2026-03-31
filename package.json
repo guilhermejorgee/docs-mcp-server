@@ -84,7 +84,6 @@
     "mime": "^4.1.0",
     "minimatch": "^10.2.4",
     "pg": "^8.20.0",
-    "pgvector": "^0.2.1",
     "playwright": "^1.58.2",
     "posthog-node": "^5.21.2",
     "psl": "^1.15.0",
