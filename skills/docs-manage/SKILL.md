@@ -35,6 +35,7 @@ npx @arabold/docs-mcp-server@latest scrape <library> <url> [options]
 | Flag | Alias | Default | Description |
 |------|-------|---------|-------------|
 | `--version <ver>` | `-v` | | Library version label |
+| `--description <text>` | `--desc` | | Short description of the library content (used for discovery via `find-library`) |
 | `--max-pages <n>` | `-p` | config default | Maximum pages to scrape |
 | `--max-depth <n>` | `-d` | config default | Maximum navigation depth |
 | `--max-concurrency <n>` | `-c` | config default | Concurrent page requests |
@@ -57,6 +58,10 @@ Examples:
 ```bash
 # Scrape React docs, version-tagged
 npx @arabold/docs-mcp-server@latest scrape react https://react.dev/reference/react --version 19.0.0
+
+# Scrape with a description (improves find-library discovery)
+npx @arabold/docs-mcp-server@latest scrape react https://react.dev/reference/react --version 19.0.0 \
+  --description "React UI library reference — hooks, components, and APIs"
 
 # Scrape local files
 npx @arabold/docs-mcp-server@latest scrape mylib file:///Users/me/docs/my-library

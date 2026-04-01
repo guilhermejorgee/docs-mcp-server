@@ -44,7 +44,7 @@ docs-mcp-server/
 │       ├── styles/             # Tailwind CSS entry
 │       └── utils/              # Web-specific utilities
 ├── db/
-│   └── migrations-pg/      # 15 SQL migration files (000–014)
+│   └── migrations-pg/      # 5 SQL migration files (000–004)
 ├── test/                       # E2E tests + fixtures + helpers
 │   └── fixtures/               # Sample files (PDF, DOCX, PPTX, XLSX, ZIP, etc.)
 ├── tests/
@@ -111,7 +111,7 @@ docs-mcp-server/
 - Env var pattern: `DOCS_MCP_<SECTION>_<KEY>` (auto-generated from paths)
 
 **Database schema:**
-- Migrations: `db/migrations-pg/000-initial-schema.sql` → `014-add-fts-stemming-configs.sql`
+- Migrations: `db/migrations-pg/000-initial-schema.sql` → `004-library-description-fts.sql`
 - Migration runner: `src/store/applyMigrations.ts`
 
 **Secrets / sensitive config:**

@@ -240,7 +240,7 @@ Settings for the full-text search system.
 | `weightVec` | `1` | RRF weight for vector search results. (deprecated — no longer used; kept for backwards config compatibility) |
 | `weightFts` | `1` | RRF weight for full-text search results. |
 | `vectorMultiplier` | `10` | Additional multiplier for vector search candidate count (`limit * overfetchFactor * vectorMultiplier`). (deprecated — no longer used; kept for backwards config compatibility) |
-| `ftsLanguages` | `["simple"]` | List of PostgreSQL text search config names for stemming (`DOCS_MCP_SEARCH_FTS_LANGUAGES`), e.g., `["english","portuguese"]`. The built-in `multilingual` config is always active; non-simple languages in this list add stemmed layers. |
+| `ftsLanguages` | `["pt_unaccent", "en_unaccent"]` | List of PostgreSQL text search config names for stemming (`DOCS_MCP_SEARCH_FTS_LANGUAGES`), e.g., `["english","portuguese"]`. The built-in `multilingual` config is always active; non-simple languages in this list add stemmed layers. |
 
 > **Detailed Guide:** See [PostgreSQL Full-Text Search](../deployment/postgresql.md) for multilingual stemming configuration and language options.
 

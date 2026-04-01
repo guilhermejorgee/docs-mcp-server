@@ -121,7 +121,7 @@ SearchTool.execute()
         → tsquery built dynamically by buildFtsTsquerySql(config.search.ftsLanguages):
            always includes plainto_tsquery('multilingual', $1); non-simple languages
            add OR-combined plainto_tsquery(lang, $1) terms
-        → Default ftsLanguages=["simple"] produces identical SQL to previous behaviour
+        → Default ftsLanguages=["pt_unaccent", "en_unaccent"] enables bilingual (PT+EN) stemmed search
       → Assembly: enrich with parent/sibling chunks
   → returns StoreSearchResult[]
 ```

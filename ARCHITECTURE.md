@@ -235,6 +235,7 @@ The tools layer includes:
 - Document scraping with configuration persistence
 - Full-text search across indexed content
 - Library and version management
+- Semantic library discovery (`find_library`) — fuzzy name/description search across indexed libraries
 - Job lifecycle management (status, progress, cancellation)
 - URL fetching and markdown conversion
 

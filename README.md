@@ -52,6 +52,12 @@ npx @arabold/docs-mcp-server@latest scrape react https://react.dev/reference/rea
 npx @arabold/docs-mcp-server@latest search react "useEffect cleanup" --output yaml
 ```
 
+**2b. Discover libraries by name or description:**
+
+```bash
+npx @arabold/docs-mcp-server@latest find-library "react state management"
+```
+
 **3. Fetch a single page as Markdown:**
 
 ```bash
