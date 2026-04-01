@@ -19,6 +19,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getCliCommand } from "./test-helpers";
+import { createPgContainer } from "./pg-container";
+
+const container = createPgContainer();
 
 describe("MCP HTTP server E2E", () => {
   // Handle unhandled rejections that might occur during client shutdown
@@ -28,12 +31,14 @@ describe("MCP HTTP server E2E", () => {
     // The shutdown test intentionally triggers aborts/closures
   };
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    await container.start();
     process.on("unhandledRejection", unhandledRejectionHandler);
-  });
+  }, 120_000);
 
-  afterAll(() => {
+  afterAll(async () => {
     process.off("unhandledRejection", unhandledRejectionHandler);
+    await container.stop();
   });
 
   let serverProcess: ChildProcess | null = null;
@@ -121,6 +126,8 @@ describe("MCP HTTP server E2E", () => {
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...testEnv,
+          DOCS_MCP_BACKEND: "postgresql",
+          DATABASE_URL: container.connectionString,
           DOCS_MCP_STORE_PATH: path.join(projectRoot, "test", ".test-store-http"),
           DOCS_MCP_TELEMETRY: "false",
           LOG_LEVEL: "info",

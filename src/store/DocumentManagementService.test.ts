@@ -50,15 +50,18 @@ const mockStore = {
   resolveVersionId: vi.fn(),
   // Library management methods
   getLibrary: vi.fn(),
+  findLibraries: vi.fn().mockResolvedValue([]),
   deleteLibrary: vi.fn(),
+  // Embedding
+  getActiveEmbeddingConfig: vi.fn().mockReturnValue(null),
+  getEmbeddingModel: vi.fn().mockReturnValue(null),
 };
 
-// Mock the DocumentStore module
-vi.mock("./DocumentStore", () => {
-  // Create the mock constructor *inside* the factory function
-  const MockDocumentStore = vi.fn(() => mockStore);
-  return { DocumentStore: MockDocumentStore };
-});
+// Mock the DocumentStoreFactory module so DocumentManagementService gets the mock store
+vi.mock("./DocumentStoreFactory", () => ({
+  createDocumentStore: vi.fn(() => mockStore),
+  DocumentStoreFactory: { create: vi.fn(() => mockStore) },
+}));
 
 import { EventBusService } from "../events";
 import { loadConfig } from "../utils/config";
@@ -656,6 +659,7 @@ describe("DocumentManagementService", () => {
         expect(result).toEqual([
           {
             library: "lib-unversioned",
+            description: null,
             versions: [
               {
                 id: 999,
@@ -727,7 +731,7 @@ describe("DocumentManagementService", () => {
       it("should throw LibraryNotFoundInStoreError if library does not exist (no suggestions)", async () => {
         const nonExistentLibrary = "non-existent-lib";
         mockStore.getLibrary.mockResolvedValue(null);
-        mockStore.queryLibraryVersions.mockResolvedValue(new Map());
+        mockStore.findLibraries.mockResolvedValue([]);
 
         await expect(
           docService.validateLibraryExists(nonExistentLibrary),
@@ -739,32 +743,18 @@ describe("DocumentManagementService", () => {
         expect(error).toBeInstanceOf(LibraryNotFoundInStoreError);
         expect(error.library).toBe(nonExistentLibrary);
         expect(error.similarLibraries).toEqual([]);
-        expect(mockStore.queryLibraryVersions).toHaveBeenCalled();
+        expect(mockStore.findLibraries).toHaveBeenCalled();
       });
 
       it("should throw LibraryNotFoundInStoreError with suggestions if library does not exist", async () => {
         const misspelledLibrary = "reac";
         mockStore.getLibrary.mockResolvedValue(null);
-        const mockLibraryMap = new Map<
-          string,
-          Array<{
-            version: string;
-            documentCount: number;
-            uniqueUrlCount: number;
-            indexedAt: string | null;
-          }>
-        >(
-          existingLibraries.map((l) => [
-            l.library,
-            l.versions.map((v) => ({
-              version: v.version,
-              documentCount: 0,
-              uniqueUrlCount: 0,
-              indexedAt: null,
-            })),
-          ]),
-        );
-        mockStore.queryLibraryVersions.mockResolvedValue(mockLibraryMap);
+        mockStore.findLibraries.mockResolvedValue([
+          {
+            name: "react",
+            description: "A JavaScript library for building user interfaces",
+          },
+        ]);
 
         await expect(docService.validateLibraryExists(misspelledLibrary)).rejects.toThrow(
           LibraryNotFoundInStoreError,
@@ -775,8 +765,14 @@ describe("DocumentManagementService", () => {
           .catch((e) => e)) as LibraryNotFoundInStoreError;
         expect(error).toBeInstanceOf(LibraryNotFoundInStoreError);
         expect(error.library).toBe(misspelledLibrary);
-        expect(error.similarLibraries).toEqual(["react"]);
-        expect(mockStore.queryLibraryVersions).toHaveBeenCalled();
+        expect(error.similarLibraries).toEqual([
+          {
+            name: "react",
+            description: "A JavaScript library for building user interfaces",
+          },
+        ]);
+        expect(error.message).toContain("react");
+        expect(mockStore.findLibraries).toHaveBeenCalled();
       });
 
       it("should handle case insensitivity", async () => {
@@ -1062,4 +1058,78 @@ describe("DocumentManagementService", () => {
       });
     });
   }); // Closing brace for describe("Core Functionality", ...)
+
+  // -------------------------------------------------------------------------
+  // T11: addScrapeResult semantic chunking integration tests
+  // -------------------------------------------------------------------------
+  describe("addScrapeResult — semantic chunking", () => {
+    const baseChunks = [
+      {
+        content: "First chunk.",
+        types: ["text" as const],
+        section: { level: 0, path: [] },
+      },
+      {
+        content: "Second chunk.",
+        types: ["text" as const],
+        section: { level: 0, path: [] },
+      },
+    ];
+    const baseScrapeResult = {
+      url: "https://example.com/docs",
+      title: "Docs",
+      chunks: baseChunks,
+      contentType: "text/html",
+      sourceContentType: "text/html",
+    };
+
+    it("falls through to store.addDocuments with default strategy", async () => {
+      mockStore.getEmbeddingModel.mockReturnValue(null);
+      await docService.initialize();
+      await docService.addScrapeResult("mylib", "1.0.0", 0, baseScrapeResult as any);
+      expect(mockStore.addDocuments).toHaveBeenCalledWith(
+        "mylib",
+        "1.0.0",
+        0,
+        baseScrapeResult,
+      );
+    });
+
+    it("throws ConfigurationError when semantic requested but no embeddings", async () => {
+      mockStore.getEmbeddingModel.mockReturnValue(null);
+      await docService.initialize();
+      await expect(
+        docService.addScrapeResult("mylib", "1.0.0", 0, baseScrapeResult as any, {
+          chunkingStrategy: "semantic",
+        }),
+      ).rejects.toThrow("Semantic chunking requires an embedding model");
+    });
+
+    it("uses SemanticChunkingStrategy when chunkingStrategy is 'semantic'", async () => {
+      const mockEmbeddings = {
+        embedDocuments: vi.fn(async (texts: string[]) => texts.map(() => [1, 0, 0])),
+        embedQuery: vi.fn(async () => [1, 0, 0]),
+      };
+      mockStore.getEmbeddingModel.mockReturnValue(mockEmbeddings);
+      await docService.initialize();
+
+      // Multiple sentences so splitText actually calls embedDocuments
+      const multiSentenceChunks = [
+        {
+          content: "First sentence. Second sentence. Third sentence.",
+          types: ["text" as const],
+          section: { level: 0, path: [] },
+        },
+      ];
+      await docService.addScrapeResult(
+        "mylib",
+        "1.0.0",
+        0,
+        { ...baseScrapeResult, chunks: multiSentenceChunks } as any,
+        { chunkingStrategy: "semantic" },
+      );
+      expect(mockStore.addDocuments).toHaveBeenCalled();
+      expect(mockEmbeddings.embedDocuments).toHaveBeenCalled();
+    });
+  });
 }); // Closing brace for the main describe block

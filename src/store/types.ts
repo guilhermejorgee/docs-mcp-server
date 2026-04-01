@@ -40,7 +40,6 @@ export interface DbChunk {
   content: string;
   metadata: DbChunkMetadata; // Chunk-specific metadata (level, path, etc.)
   sort_order: number;
-  embedding: Buffer | null; // Binary blob for embeddings
   created_at: string;
   score: number | null; // Added during search queries
 }
@@ -67,7 +66,7 @@ export interface DbChunkRank {
 }
 
 /**
- * Utility type for handling SQLite query results that may be undefined
+ * Utility type for handling database query results that may be undefined
  */
 export type DbQueryResult<T> = T | undefined;
 
@@ -117,6 +116,10 @@ export interface VersionScraperOptions {
   // Processing options
   scrapeMode?: ScrapeMode;
   headers?: Record<string, string>;
+
+  // Chunking
+  chunkingStrategy?: "default" | "semantic";
+  semanticThreshold?: number;
 }
 
 /**
@@ -170,10 +173,19 @@ export interface VersionSummary {
 }
 
 /**
+ * Represents a library suggestion returned when a library is not found.
+ */
+export interface LibrarySuggestion {
+  name: string;
+  description: string | null;
+}
+
+/**
  * Summary of a library and its versions for API/UI consumption.
  */
 export interface LibrarySummary {
   library: string;
+  description?: string | null;
   versions: VersionSummary[];
 }
 
@@ -280,6 +292,7 @@ export function isActiveStatus(status: VersionStatus): boolean {
  */
 export interface DbLibraryVersion {
   library: string;
+  description: string | null;
   version: string;
   versionId: number;
   status: VersionStatus;

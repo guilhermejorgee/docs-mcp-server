@@ -12,6 +12,7 @@ import type { DataRouter } from "./trpc/router";
 import type {
   DbVersionWithLibrary,
   FindVersionResult,
+  LibrarySuggestion,
   LibrarySummary,
   StoredScraperOptions,
   StoreSearchResult,
@@ -55,6 +56,10 @@ export class DocumentManagementClient implements IDocumentManagement {
 
   async listLibraries(): Promise<LibrarySummary[]> {
     return this.client.listLibraries.query();
+  }
+
+  async findLibraries(query: string, limit = 5): Promise<LibrarySuggestion[]> {
+    return this.client.findLibraries.query({ query, limit });
   }
 
   async validateLibraryExists(library: string): Promise<void> {

@@ -6,8 +6,10 @@ import type { IDocumentManagement } from "./trpc/interfaces";
 
 export * from "./DocumentManagementClient";
 export * from "./DocumentManagementService";
-export * from "./DocumentStore";
+export * from "./DocumentStoreFactory";
 export * from "./errors";
+export * from "./IDocumentStore";
+export * from "./PostgresDocumentStore";
 export * from "./trpc/interfaces";
 
 /** Factory to create a document management implementation */

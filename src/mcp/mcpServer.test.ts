@@ -48,6 +48,9 @@ const mockTools: McpServerTools = {
   cancelJob: {
     execute: vi.fn(async () => ({ success: true, message: "Cancelled" })),
   } as any,
+  findLibrary: {
+    execute: vi.fn(async () => ({ libraries: [] })),
+  } as any,
   remove: {
     execute: vi.fn(async () => ({ message: "Removed" })),
   } as any,

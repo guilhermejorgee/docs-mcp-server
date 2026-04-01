@@ -40,7 +40,7 @@ describe("CLI E2E", () => {
     const { code, stdout } = await runCli(["--help"]);
     expect(code).toBe(0);
     expect(stdout).toContain("Usage: docs-mcp-server <command> [options]");
-    expect(stdout).toContain("Commands:");
+    expect(stdout).toMatch(/Commands:|Comandos:/);
     expect(stdout).toContain("list");
   });
 
@@ -54,13 +54,13 @@ describe("CLI E2E", () => {
   it("should fail on unknown command", async () => {
     const { code, stderr } = await runCli(["unknown-command"]);
     expect(code).toBe(1);
-    expect(stderr).toContain("Unknown argument: unknown-command");
+    expect(stderr).toMatch(/Unknown argument: unknown-command|Argumento desconhecido: unknown-command/);
   });
 
   it("should fail on unknown argument", async () => {
     const { code, stderr } = await runCli(["list", "--unknown-flag"]);
     expect(code).toBe(1);
-    expect(stderr).toMatch(/Unknown argument/i);
+    expect(stderr).toMatch(/Unknown argument|Argumentos desconhecidos|Argumento desconhecido/i);
     expect(stderr).toContain("unknown-flag");
   });
 });

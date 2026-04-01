@@ -52,6 +52,12 @@ npx @arabold/docs-mcp-server@latest scrape react https://react.dev/reference/rea
 npx @arabold/docs-mcp-server@latest search react "useEffect cleanup" --output yaml
 ```
 
+**2b. Discover libraries by name or description:**
+
+```bash
+npx @arabold/docs-mcp-server@latest find-library "react state management"
+```
+
 **3. Fetch a single page as Markdown:**
 
 ```bash
@@ -113,7 +119,7 @@ docker run --rm \
 
 ### 🧠 Configure Embedding Model (Recommended)
 
-Using an embedding model is **optional** but dramatically improves search quality by enabling semantic vector search.
+Using an embedding model is **optional** but improves indexing quality by enabling semantic chunking — splitting content at topic boundaries rather than structural ones.
 
 **Example: Enable OpenAI Embeddings**
 
@@ -122,6 +128,22 @@ OPENAI_API_KEY="sk-proj-..." npx @arabold/docs-mcp-server@latest
 ```
 
 See **[Embedding Models](docs/guides/embedding-models.md)** for configuring **Ollama**, **Gemini**, **Azure**, and others.
+
+Internal or enterprise providers that authenticate via OAuth2 `client_credentials` are also supported — configure `tokenUrl` and `clientId` in your `config.yaml`. Client secrets can be stored in **HashiCorp Vault** or **AWS Secrets Manager** by setting `DOCS_MCP_SECRETS_PROVIDER`. See [Embedding Model Configuration](docs/guides/embedding-models.md#oauth2-authentication-openai-compatible-providers) for full OAuth2 setup details.
+
+### 🐘 PostgreSQL Backend
+
+The server requires **PostgreSQL** (version 14 or newer). Configure the database connection:
+
+```bash
+DATABASE_URL=postgresql://user:pass@host:5432/mydb \
+DOCS_MCP_BACKEND=postgresql \
+npx @arabold/docs-mcp-server@latest
+```
+
+Requirements: PostgreSQL 14+.
+
+See **[PostgreSQL Backend](docs/deployment/postgresql.md)** for the full setup guide.
 
 ---
 
@@ -137,6 +159,7 @@ See **[Embedding Models](docs/guides/embedding-models.md)** for configuring **Ol
 
 ### Key Concepts & Architecture
 -   **[Deployment Modes](docs/infrastructure/deployment-modes.md)**: Standalone vs. Distributed (Docker Compose).
+-   **[PostgreSQL Backend](docs/deployment/postgresql.md)**: Scale to multi-instance deployments with PostgreSQL.
 -   **[Authentication](docs/infrastructure/authentication.md)**: Securing your server with OAuth2/OIDC.
 -   **[Telemetry](docs/infrastructure/telemetry.md)**: Privacy-first usage data collection.
 -   **[Architecture](ARCHITECTURE.md)**: Deep dive into the system design.

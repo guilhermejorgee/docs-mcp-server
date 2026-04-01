@@ -44,6 +44,7 @@ export function registerNewJobRoutes(
         Body: {
           url: string;
           library: string;
+          description: string;
           version?: string;
           formMode?: "new" | "add-version"; // Hidden field indicating form context
           maxPages?: string;
@@ -118,6 +119,7 @@ export function registerNewJobRoutes(
           version: normalizedVersion,
           waitForCompletion: false, // Don't wait in UI
           options: {
+            description: body.description || undefined,
             maxPages: body.maxPages
               ? Number.parseInt(body.maxPages, 10)
               : undefined,

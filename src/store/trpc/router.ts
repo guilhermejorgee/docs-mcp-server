@@ -8,6 +8,7 @@ import { z } from "zod";
 import type {
   DbVersionWithLibrary,
   FindVersionResult,
+  LibrarySuggestion,
   StoreSearchResult,
   VersionStatus,
 } from "../types";
@@ -41,6 +42,28 @@ export function createDataRouter(trpc: unknown) {
     listLibraries: tt.procedure.query(async ({ ctx }: { ctx: DataTrpcContext }) => {
       return await ctx.docService.listLibraries(); // LibrarySummary[]
     }),
+
+    findLibraries: tt.procedure
+      .input(
+        z.object({
+          query: nonEmpty,
+          limit: z.number().int().positive().max(20).optional(),
+        }),
+      )
+      .query(
+        async ({
+          ctx,
+          input,
+        }: {
+          ctx: DataTrpcContext;
+          input: { query: string; limit?: number };
+        }) => {
+          return (await ctx.docService.findLibraries(
+            input.query,
+            input.limit ?? 5,
+          )) as LibrarySuggestion[];
+        },
+      ),
 
     findBestVersion: tt.procedure
       .input(z.object({ library: nonEmpty, targetVersion: z.string().optional() }))

@@ -227,6 +227,7 @@ export function registerLibraryDetailRoutes(
 
         let initialValues: {
           library: string;
+          description?: string;
           url?: string;
           maxPages?: number;
           maxDepth?: number;
@@ -261,6 +262,7 @@ export function registerLibraryDetailRoutes(
                 const opts = scraperConfig.options;
                 initialValues = {
                   library: libraryName,
+                  description: libraryInfo.description ?? undefined,
                   url: scraperConfig.sourceUrl,
                   maxPages: opts.maxPages,
                   maxDepth: opts.maxDepth,

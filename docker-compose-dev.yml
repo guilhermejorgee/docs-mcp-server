@@ -1,0 +1,100 @@
+services:
+  postgres:
+    profiles: [postgres]
+    image: postgres:16-alpine
+    container_name: docs-mcp-dev-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: docs
+      POSTGRES_PASSWORD: docs
+      POSTGRES_DB: docs_mcp
+    volumes:
+      - docs-mcp-dev-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docs -d docs_mcp"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  pgadmin:
+    profiles: [postgres]
+    image: dpage/pgadmin4
+    container_name: docs-mcp-dev-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - docs-mcp-dev-pgadmin-data:/var/lib/pgadmin
+      - ./docker/pgadmin-servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ollama:
+    profiles: [ollama]
+    image: ollama/ollama
+    container_name: docs-mcp-dev-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - docs-mcp-dev-ollama-data:/root/.ollama
+    # Uncomment to enable NVIDIA GPU support.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  app:
+    profiles: [app]
+    image: ghcr.io/arabold/docs-mcp-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docs-mcp-dev-app
+    restart: unless-stopped
+    command: ["--protocol", "http", "--host", "0.0.0.0", "--port", "6280", "--no-logo"]
+    ports:
+      - "6280:6280"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DOCS_MCP_BACKEND: ${DOCS_MCP_BACKEND:-postgresql}
+      DATABASE_URL: ${DATABASE_URL:-}
+      DOCS_MCP_EMBEDDING_MODEL: ${DOCS_MCP_EMBEDDING_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+    volumes:
+      - docs-mcp-data:/data
+      - docs-mcp-config:/config
+    healthcheck:
+      test: 'node -e ''require("net").connect(6280, "127.0.0.1").on("connect",()=>process.exit(0)).on("error",()=>process.exit(1))'''
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  docs-mcp-dev-postgres-data:
+    name: docs-mcp-dev-postgres-data
+  docs-mcp-dev-pgadmin-data:
+    name: docs-mcp-dev-pgadmin-data
+  docs-mcp-dev-ollama-data:
+    name: docs-mcp-dev-ollama-data
+  docs-mcp-data:
+    name: docs-mcp-data
+  docs-mcp-config:
+    name: docs-mcp-config

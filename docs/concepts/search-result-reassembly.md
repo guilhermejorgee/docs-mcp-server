@@ -10,7 +10,7 @@ The reassembly pipeline processes initial search matches through four stages:
 
 ### Stage 1: Grouping and Clustering
 
-Initial search results (from hybrid or FTS-only search) are organized before any context expansion:
+Initial search results (from FTS search) are organized before any context expansion:
 
 1. **Groups by URL**: Combines chunks from the same document/URL
 2. **Clusters by distance**: Within each URL group, splits chunks into clusters when the `sort_order` gap between consecutive chunks exceeds `maxChunkDistance` (default 3). Each cluster produces a separate search result.
@@ -105,7 +105,7 @@ These limits balance comprehensive context with performance and relevance.
 
 The reassembly process follows these key steps:
 
-1. **Initial Search**: Vector similarity and full-text search find chunks matching the query
+1. **Initial Search**: Full-text search finds chunks matching the query
 2. **Context Expansion**: For each result, find related chunks using hierarchical relationships
 3. **URL Grouping**: Combine chunks from the same document and deduplicate chunk IDs
 4. **Ordered Retrieval**: Fetch all related chunks ordered by their original document position (`sort_order`)

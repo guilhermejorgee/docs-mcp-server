@@ -23,9 +23,9 @@ modify the index.
 - You want to check which libraries and versions are already indexed.
 - You need to resolve which documentation version best matches a constraint.
 
-Always run `list` first if you are unsure whether a library has been indexed.
-If nothing is indexed yet, use the **docs-manage** skill to scrape documentation
-before searching.
+Use `find-library` to discover whether a library is indexed when you only know a partial name or description.
+Use `list` if you want to enumerate all indexed libraries at once.
+If nothing is indexed yet, use the **docs-manage** skill to scrape documentation before searching.
 
 ## Commands
 
@@ -51,6 +51,7 @@ Example output (YAML):
   versions:
     - "19.0.0"
     - "18.3.1"
+  description: "React documentation for building user interfaces"
 - library: typescript
   versions:
     - "5.7.0"
@@ -107,6 +108,30 @@ npx @arabold/docs-mcp-server@latest find-version react --version "18.x" --output
 
 Returns the resolved version string and library metadata.
 
+### find-library
+
+Discover indexed libraries by searching across names and descriptions.
+
+```bash
+npx @arabold/docs-mcp-server@latest find-library "<query>" [options]
+```
+
+| Flag | Alias | Default | Description |
+|------|-------|---------|-------------|
+| `--limit <n>` | `-l` | `5` | Maximum number of results |
+| `--server-url <url>` | | | Remote pipeline worker URL |
+| `--output json\|yaml\|toon` | | JSON | Structured output format |
+| `--quiet` | | | Suppress non-error diagnostics |
+| `--verbose` | | | Enable debug logging |
+
+Example:
+
+```bash
+npx @arabold/docs-mcp-server@latest find-library "react state management" --output yaml
+```
+
+Returns a ranked list of matching libraries with name, version(s), and description.
+
 ## Interpreting output
 
 All three commands emit structured data to **stdout**. Diagnostics and progress
@@ -120,8 +145,8 @@ request `--output yaml` for a more readable format.
 ## Typical workflow
 
 ```bash
-# 1. Check what is indexed
-npx @arabold/docs-mcp-server@latest list --output yaml
+# 1. Discover if the library is indexed (by partial name or description)
+npx @arabold/docs-mcp-server@latest find-library "react" --output yaml
 
 # 2. Search for relevant docs
 npx @arabold/docs-mcp-server@latest search react "server components" --version 19.x --output yaml

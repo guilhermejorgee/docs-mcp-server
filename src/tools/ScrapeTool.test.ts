@@ -125,6 +125,8 @@ describe("ScrapeTool", () => {
         maxConcurrency: 5, // Test override
         ignoreErrors: false, // Overridden
         scrapeMode: ScrapeMode.Auto, // Use enum
+        chunkingStrategy: "default",
+        semanticThreshold: undefined,
       },
     );
     expect(mockManagerInstance.waitForJobCompletion).toHaveBeenCalledWith(MOCK_JOB_ID);

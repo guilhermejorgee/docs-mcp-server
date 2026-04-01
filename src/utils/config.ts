@@ -83,8 +83,33 @@ export const DEFAULT_CONFIG = {
     requestTimeoutMs: 30_000,
     initTimeoutMs: 30_000,
     vectorDimension: 1536,
+    tokenUrl: undefined as string | undefined,
+    clientId: undefined as string | undefined,
+    clientSecretKey: "DOCS_MCP_EMBEDDING_CLIENT_SECRET",
+    tokenCacheTtlMs: undefined as number | undefined,
+  },
+  secrets: {
+    provider: "env" as "env" | "vault" | "aws",
+    vault: {
+      url: undefined as string | undefined,
+      token: undefined as string | undefined,
+      mountPath: undefined as string | undefined,
+    },
+    aws: {
+      region: undefined as string | undefined,
+      secretId: undefined as string | undefined,
+    },
   },
   db: {
+    backend: "postgresql" as "postgresql",
+    postgresql: {
+      connectionString: "",
+      poolSize: 50,
+      //O poolSize ideal é aproximadamente: (número médio de queries por search) × (concorrência esperada) / (latência DB em segundos).
+      // Com 16 queries/search, 50 usuários simultâneos e 20ms por query: ~40 conexões. Pool de 50 tem folga razoável sem sobrecarregar o PostgreSQL.
+      idleTimeoutMs: 30000,
+      connectionTimeoutMs: 5000,
+    },
     migrationMaxRetries: 5,
     migrationRetryDelayMs: 300,
   },
@@ -93,6 +118,7 @@ export const DEFAULT_CONFIG = {
     weightVec: 1,
     weightFts: 1,
     vectorMultiplier: 10,
+    ftsLanguages: ["pt_unaccent", "en_unaccent"] as string[],
   },
   sandbox: {
     defaultTimeoutMs: 5000,
@@ -227,10 +253,41 @@ export const AppConfigSchema = z.object({
         .number()
         .int()
         .default(DEFAULT_CONFIG.embeddings.vectorDimension),
+      tokenUrl: z.string().url().optional(),
+      clientId: z.string().optional(),
+      clientSecretKey: z.string().default(DEFAULT_CONFIG.embeddings.clientSecretKey),
+      tokenCacheTtlMs: z.coerce.number().int().positive().optional(),
     })
-    .default(DEFAULT_CONFIG.embeddings),
+    .default({
+      batchSize: DEFAULT_CONFIG.embeddings.batchSize,
+      batchChars: DEFAULT_CONFIG.embeddings.batchChars,
+      requestTimeoutMs: DEFAULT_CONFIG.embeddings.requestTimeoutMs,
+      initTimeoutMs: DEFAULT_CONFIG.embeddings.initTimeoutMs,
+      vectorDimension: DEFAULT_CONFIG.embeddings.vectorDimension,
+      clientSecretKey: DEFAULT_CONFIG.embeddings.clientSecretKey,
+    }),
   db: z
     .object({
+      backend: z.enum(["postgresql"]).default(DEFAULT_CONFIG.db.backend),
+      postgresql: z
+        .object({
+          connectionString: z
+            .string()
+            .default(DEFAULT_CONFIG.db.postgresql.connectionString),
+          poolSize: z.coerce
+            .number()
+            .int()
+            .default(DEFAULT_CONFIG.db.postgresql.poolSize),
+          idleTimeoutMs: z.coerce
+            .number()
+            .int()
+            .default(DEFAULT_CONFIG.db.postgresql.idleTimeoutMs),
+          connectionTimeoutMs: z.coerce
+            .number()
+            .int()
+            .default(DEFAULT_CONFIG.db.postgresql.connectionTimeoutMs),
+        })
+        .default(DEFAULT_CONFIG.db.postgresql),
       migrationMaxRetries: z.coerce
         .number()
         .int()
@@ -250,6 +307,16 @@ export const AppConfigSchema = z.object({
         .number()
         .int()
         .default(DEFAULT_CONFIG.search.vectorMultiplier),
+      ftsLanguages: z
+        .array(
+          z
+            .string()
+            .regex(
+              /^[a-z_][a-z0-9_]*$/,
+              "ftsLanguages entries must be valid PostgreSQL text search config identifiers (lowercase letters, digits, underscores)",
+            ),
+        )
+        .default(DEFAULT_CONFIG.search.ftsLanguages),
     })
     .default(DEFAULT_CONFIG.search),
   sandbox: z
@@ -282,6 +349,24 @@ export const AppConfigSchema = z.object({
         .default(DEFAULT_CONFIG.assembly.maxChunkDistance),
     })
     .default(DEFAULT_CONFIG.assembly),
+  secrets: z
+    .object({
+      provider: z.enum(["env", "vault", "aws"]).default(DEFAULT_CONFIG.secrets.provider),
+      vault: z
+        .object({
+          url: z.string().optional(),
+          token: z.string().optional(),
+          mountPath: z.string().optional(),
+        })
+        .default({}),
+      aws: z
+        .object({
+          region: z.string().optional(),
+          secretId: z.string().optional(),
+        })
+        .default({}),
+    })
+    .default({ provider: "env", vault: {}, aws: {} }),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -301,6 +386,11 @@ interface ConfigMapping {
 const configMappings: ConfigMapping[] = [
   { path: ["server", "protocol"], env: ["DOCS_MCP_PROTOCOL"], cli: "protocol" },
   { path: ["app", "storePath"], env: ["DOCS_MCP_STORE_PATH"], cli: "storePath" },
+  { path: ["db", "backend"], env: ["DOCS_MCP_BACKEND"] },
+  {
+    path: ["db", "postgresql", "connectionString"],
+    env: ["DATABASE_URL", "DOCS_MCP_DATABASE_URL"],
+  },
   { path: ["app", "telemetryEnabled"], env: ["DOCS_MCP_TELEMETRY"] }, // Handled via --no-telemetry in CLI usually
   { path: ["app", "readOnly"], env: ["DOCS_MCP_READ_ONLY"], cli: "readOnly" },
   // Ports - Special handling for shared env vars is done in mapping logic
@@ -341,6 +431,25 @@ const configMappings: ConfigMapping[] = [
     env: ["DOCS_MCP_AUTH_AUDIENCE"],
     cli: "authAudience",
   },
+  { path: ["embeddings", "tokenUrl"], env: ["DOCS_MCP_EMBEDDINGS_TOKEN_URL"] },
+  { path: ["embeddings", "clientId"], env: ["DOCS_MCP_EMBEDDINGS_CLIENT_ID"] },
+  {
+    path: ["embeddings", "clientSecretKey"],
+    env: ["DOCS_MCP_EMBEDDINGS_CLIENT_SECRET_KEY"],
+  },
+  {
+    path: ["embeddings", "tokenCacheTtlMs"],
+    env: ["DOCS_MCP_EMBEDDINGS_TOKEN_CACHE_TTL_MS"],
+  },
+  { path: ["secrets", "provider"], env: ["DOCS_MCP_SECRETS_PROVIDER"] },
+  { path: ["secrets", "vault", "url"], env: ["DOCS_MCP_SECRETS_VAULT_URL"] },
+  { path: ["secrets", "vault", "token"], env: ["DOCS_MCP_SECRETS_VAULT_TOKEN"] },
+  {
+    path: ["secrets", "vault", "mountPath"],
+    env: ["DOCS_MCP_SECRETS_VAULT_MOUNT_PATH"],
+  },
+  { path: ["secrets", "aws", "region"], env: ["DOCS_MCP_SECRETS_AWS_REGION"] },
+  { path: ["secrets", "aws", "secretId"], env: ["DOCS_MCP_SECRETS_AWS_SECRET_ID"] },
   // Add other mappings as needed for CLI/Env overrides
 ];
 
@@ -551,6 +660,12 @@ function getAtPath(obj: ConfigObject, pathArr: string[]): unknown {
 function deepMerge(target: unknown, source: unknown): unknown {
   if (typeof target !== "object" || target === null) return source;
   if (typeof source !== "object" || source === null) return target;
+  // Arrays should replace, not be recursively merged. If types mismatch (e.g.
+  // a stored config has an array serialized as an indexed object), fall back to
+  // the target (default) value so the schema can validate cleanly.
+  if (Array.isArray(target) || Array.isArray(source)) {
+    return Array.isArray(source) ? source : target;
+  }
 
   const t = target as ConfigObject;
   const s = source as ConfigObject;

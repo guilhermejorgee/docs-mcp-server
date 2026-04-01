@@ -9,6 +9,11 @@ import { afterAll, afterEach, beforeAll } from "vitest";
 import { vi } from "vitest";
 import { server } from "./mock-server";
 
+// Ensure tests always use PostgreSQL by default, regardless of what .env may contain.
+// dotenv will not override env vars that are already set, so setting this here
+// before any test or setup file calls config() is sufficient.
+process.env.DOCS_MCP_BACKEND ??= "postgresql";
+
 vi.mock("../src/utils/logger");
 
 // Start mock server before all tests

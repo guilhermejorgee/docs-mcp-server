@@ -196,13 +196,14 @@ If no authentication is available, public repositories are still accessible but 
 
 ### Splitter (`splitter`)
 
-Settings for chunking text for vector search.
+Settings for document chunking.
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
 | `minChunkSize` | `500` | Minimum characters per chunk body. Chunks below this threshold are merged with adjacent chunks by the greedy optimizer. |
 | `preferredChunkSize` | `1500` | Soft target for chunk body size in characters. The greedy optimizer splits when combining two chunks would exceed this value, provided both sides are already above `minChunkSize`. |
 | `maxChunkSize` | `5000` | Hard upper limit for chunk body size in characters. No chunk body will exceed this value. |
+| `chunkingStrategy` | `structural` | Strategy used to split documents into chunks. `"semantic"` uses sentence embeddings and cosine similarity to detect topic boundaries — requires an embedding model to be configured. `"structural"` splits at markdown headings and code block boundaries (free, deterministic, and the default when no embedding model is configured). See **[Semantic Chunking](../concepts/semantic-chunking.md)** for details. |
 
 > **Note:** These size limits apply to the **text body** of each chunk. Before embedding,
 > a small metadata header (page title, URL, section path) is prepended to each chunk,
@@ -224,17 +225,37 @@ Settings for the vector embedding generation.
 | `requestTimeoutMs` | `30000` | Timeout for each embedding API request (ms). |
 | `initTimeoutMs` | `30000` | Timeout for the initial test embedding during model initialization (ms). |
 | `vectorDimension` | `1536` | Dimension of the vector space (must match model). |
+| `tokenUrl` | — | OAuth2 token endpoint URL (`DOCS_MCP_EMBEDDINGS_TOKEN_URL`). When set, authenticates via `client_credentials` instead of an API key. |
+| `clientId` | — | OAuth2 client ID (`DOCS_MCP_EMBEDDINGS_CLIENT_ID`). Required when `tokenUrl` is set. |
+| `clientSecretKey` | `DOCS_MCP_EMBEDDING_CLIENT_SECRET` | Key name used to resolve the client secret from the configured secret provider (`DOCS_MCP_EMBEDDINGS_CLIENT_SECRET_KEY`). |
+| `tokenCacheTtlMs` | — | Override token TTL in ms (`DOCS_MCP_EMBEDDINGS_TOKEN_CACHE_TTL_MS`). When absent, uses `expires_in` from the token response. |
 
 ### Search (`search`)
 
-Settings for the hybrid search ranking system.
+Settings for the full-text search system.
 
 | Option | Default | Description |
 |:-------|:--------|:------------|
 | `overfetchFactor` | `2` | Multiplier on the search limit for FTS overfetch (fetches `limit * overfetchFactor` candidates). |
-| `weightVec` | `1` | RRF weight for vector search results. |
+| `weightVec` | `1` | RRF weight for vector search results. (deprecated — no longer used; kept for backwards config compatibility) |
 | `weightFts` | `1` | RRF weight for full-text search results. |
-| `vectorMultiplier` | `10` | Additional multiplier for vector search candidate count (`limit * overfetchFactor * vectorMultiplier`). |
+| `vectorMultiplier` | `10` | Additional multiplier for vector search candidate count (`limit * overfetchFactor * vectorMultiplier`). (deprecated — no longer used; kept for backwards config compatibility) |
+| `ftsLanguages` | `["pt_unaccent", "en_unaccent"]` | List of PostgreSQL text search config names for stemming (`DOCS_MCP_SEARCH_FTS_LANGUAGES`), e.g., `["english","portuguese"]`. The built-in `multilingual` config is always active; non-simple languages in this list add stemmed layers. |
+
+> **Detailed Guide:** See [PostgreSQL Full-Text Search](../deployment/postgresql.md) for multilingual stemming configuration and language options.
+
+### Secrets (`secrets`)
+
+Configuration for the secret backend used to resolve sensitive values (e.g., OAuth2 client secrets). Defaults to reading from environment variables with no additional setup required.
+
+| Option | Default | Description |
+|:-------|:--------|:------------|
+| `provider` | `"env"` | Backend to use: `env` (default), `vault` (HashiCorp Vault KV v2), or `aws` (AWS Secrets Manager). Env var: `DOCS_MCP_SECRETS_PROVIDER`. |
+| `vault.url` | — | Vault server URL, e.g., `http://vault:8200`. Required when `provider` is `vault`. Env var: `DOCS_MCP_SECRETS_VAULT_URL`. |
+| `vault.token` | — | Vault token for authentication. Env var: `DOCS_MCP_SECRETS_VAULT_TOKEN`. |
+| `vault.mountPath` | `"secret"` | KV v2 mount path. Env var: `DOCS_MCP_SECRETS_VAULT_MOUNT_PATH`. |
+| `aws.region` | — | AWS region for Secrets Manager. Env var: `DOCS_MCP_SECRETS_AWS_REGION`. |
+| `aws.secretId` | — | Name or ARN of the secret in AWS Secrets Manager. Env var: `DOCS_MCP_SECRETS_AWS_SECRET_ID`. |
 
 ### Database (`db`)
 

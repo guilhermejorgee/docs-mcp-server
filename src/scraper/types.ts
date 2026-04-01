@@ -119,6 +119,24 @@ export interface ScraperOptions {
    * @default true
    */
   clean?: boolean;
+  /**
+   * Chunking strategy to use when splitting document content.
+   * - 'default': Use the standard fixed-size text splitter.
+   * - 'semantic': Use semantic chunking via embedding similarity (requires an embedding model).
+   * @default 'default'
+   */
+  chunkingStrategy?: "default" | "semantic";
+  /**
+   * Cosine similarity threshold for semantic chunking boundary detection.
+   * Values closer to 0 produce fewer, larger chunks; closer to 1 produces more, smaller chunks.
+   * When undefined, an adaptive threshold (25th percentile) is computed automatically.
+   * Range: [0, 1]
+   */
+  semanticThreshold?: number;
+  /**
+   * Short description of the library content used for discovery via find_library.
+   */
+  description?: string | null;
 }
 
 /**

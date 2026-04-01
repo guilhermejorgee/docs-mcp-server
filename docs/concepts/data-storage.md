@@ -2,7 +2,7 @@
 
 ## Overview
 
-The storage system uses SQLite with a normalized, four-table schema design for efficient document storage, retrieval, and version management. The schema supports page-level metadata tracking, ETag-based change detection, and hierarchical document chunking.
+The storage system uses PostgreSQL with a normalized schema design for efficient document storage, retrieval, and version management. The schema supports page-level metadata tracking, ETag-based change detection, and hierarchical document chunking.
 
 ## Database Schema
 
@@ -55,7 +55,6 @@ erDiagram
         text content
         json metadata
         int sort_order
-        blob embedding
         datetime created_at
     }
 ```
@@ -130,7 +129,6 @@ Document chunks with embeddings and hierarchical metadata.
 - `content` (TEXT): Chunk content text
 - `metadata` (JSON): Chunk-specific metadata (level, path, types)
 - `sort_order` (INTEGER): Ordering within page
-- `embedding` (BLOB): Vector embedding as binary data
 - `created_at` (DATETIME): Creation timestamp
 
 **Purpose:** Content storage with vector embeddings, hierarchical metadata, and search optimization.
@@ -154,6 +152,9 @@ Sequential SQL migrations in `db/migrations/`:
 9. `008-case-insensitive-names.sql` - Case-insensitive library name handling
 10. `009-add-pages-table.sql` - Page-level metadata normalization
 11. `010-add-depth-to-pages.sql` - Crawl depth tracking for refresh operations
+12. `011-add-fts-vector.sql` - Full-text search vector column for tsvector FTS
+13. `012-add-source-content-type.sql` - Source content type tracking
+14. `013-drop-embedding-column.sql` - Drop embedding column (embeddings are transient, not persisted)
 
 **Code Reference:** All migration files in `db/migrations/` directory
 
@@ -212,21 +213,9 @@ Handles document lifecycle operations with normalized schema access.
 2. Create version record with job configuration
 3. Create page records for each unique URL
 4. Process and store document chunks linked to pages
-5. Generate and store embeddings as binary BLOB
-6. Update version status and progress
+5. Update version status and progress
 
 ## Embedding Management
-
-### Vector Storage
-
-Embeddings stored as BLOB in documents table:
-
-- 1536-dimensional vectors by default (configurable via `embeddings.vectorDimension`)
-- Provider-agnostic binary serialization
-- NULL handling for documents without embeddings
-- Direct storage eliminates need for separate vector table
-
-**Code Reference:** `src/store/types.ts` line 4 (EMBEDDINGS_VECTOR_DIMENSION constant)
 
 ### EmbeddingFactory
 
@@ -245,33 +234,29 @@ Centralized embedding generation supporting multiple providers.
 
 ### DocumentRetrieverService
 
-Handles search and retrieval operations with hybrid ranking.
+Handles search and retrieval operations using PostgreSQL full-text search.
 
 **Search Methods:**
 
-- Vector similarity search using sqlite-vec extension
-- Full-text search using FTS5 virtual table
-- Hybrid search with Reciprocal Rank Fusion (RRF)
-- Context-aware result assembly
+- Full-text search using PostgreSQL tsvector with `multilingual` configuration
+- Context-aware result assembly via parent/sibling chunk enrichment
 
 **Search Architecture:**
 
-1. Query embeddings generated for vector search
-2. FTS5 query for keyword matching
-3. Results combined using RRF algorithm
-4. Chunks assembled with hierarchical context
-5. Results ranked by combined score
+1. Query parsed with `plainto_tsquery` using `multilingual` text search configuration
+2. tsvector index queried for keyword matching
+3. Chunks assembled with hierarchical context
+4. Results ranked by FTS relevance score
 
 **Code Reference:** `src/store/DocumentRetrieverService.ts`
 
 ### FTS Implementation
 
-Full-text search using SQLite FTS5:
+Full-text search using PostgreSQL tsvector:
 
-- Porter stemmer for English language
-- Unicode61 tokenizer for international support
-- Trigger-based index maintenance (automatic updates)
-- External content mode (FTS references documents table)
+- `multilingual` text search configuration (simple + unaccent extension)
+- tsvector column updated via triggers on insert/update
+- Native PostgreSQL FTS with GIN index for efficient querying
 
 **Indexed Fields:** content, title, url, path (from metadata)
 
@@ -299,10 +284,10 @@ Database transactions ensure consistency:
 
 Safe concurrent database access:
 
-- Better-sqlite3 with synchronous API
-- Transaction-based locking
-- Read operations don't block each other
-- Write operations serialize automatically
+- `pg` async connection pool with configurable pool size
+- Transaction-based locking via PostgreSQL MVCC
+- Read operations don't block each other (MVCC)
+- Write operations serialized via PostgreSQL transaction isolation
 
 **Code Reference:** `src/store/` - All service classes use transaction blocks
 
@@ -314,7 +299,7 @@ Database indexes optimize query performance:
 
 - Primary keys on all tables (automatic)
 - Foreign key indexes for join performance
-- FTS5 indexes for text search
+- GIN indexes for tsvector full-text search
 - Composite indexes for common query patterns (library_id + status)
 
 **Code Reference:** Index creation statements in migration files
@@ -332,10 +317,9 @@ Efficient query patterns throughout the codebase:
 
 Space-efficient data storage:
 
-- Binary embedding storage (BLOB format)
 - JSON metadata for flexible chunk properties
 - Normalized schema eliminates redundant data
-- SQLite VACUUM operations for space reclamation
+- PostgreSQL VACUUM operations for space reclamation
 
 ## Backup and Recovery
 
@@ -343,7 +327,7 @@ Space-efficient data storage:
 
 Export functionality through DocumentManagementService:
 
-- Complete database export via SQLite backup API
+- Complete database export via `pg_dump`
 - Library-specific export using filtered queries
 - Version-specific export for portability
 - Metadata preservation in JSON format
@@ -362,7 +346,7 @@ Import from external sources:
 Recovery mechanisms:
 
 - Database integrity checks on startup
-- Transaction log for crash recovery (SQLite WAL mode)
+- Transaction log for crash recovery (PostgreSQL WAL archiving)
 - Schema validation after migration
 - Automatic repair for corrupted indexes
 
@@ -384,7 +368,7 @@ Regular maintenance tasks:
 - VACUUM operations for space recovery
 - Index rebuilding via REINDEX
 - Orphaned record cleanup via foreign key constraints
-- Performance analysis using EXPLAIN QUERY PLAN
+- Performance analysis using EXPLAIN ANALYZE
 
 ### Diagnostics
 
@@ -392,5 +376,5 @@ Debugging and diagnostic capabilities:
 
 - Query execution analysis
 - Storage space breakdown by table
-- Relationship integrity checks via PRAGMA foreign_key_check
+- Relationship integrity checks via `pg_constraint` catalog queries
 - Performance bottleneck identification

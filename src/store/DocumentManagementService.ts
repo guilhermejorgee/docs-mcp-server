@@ -1,27 +1,30 @@
-import path from "node:path";
-import Fuse from "fuse.js";
+import type { Embeddings } from "@langchain/core/embeddings";
 import semver from "semver";
 import type { EventBusService } from "../events";
 import { EventType } from "../events";
 import { PipelineFactory } from "../scraper/pipelines/PipelineFactory";
 import type { ContentPipeline } from "../scraper/pipelines/types";
 import type { ScrapeResult, ScraperOptions } from "../scraper/types";
+import { SemanticChunkingStrategy } from "../splitter/SemanticChunkingStrategy";
 import type { Chunk } from "../splitter/types";
 import { telemetry } from "../telemetry";
 import type { AppConfig } from "../utils/config";
 import { logger } from "../utils/logger";
 import { sortVersionsDescending } from "../utils/version";
 import { DocumentRetrieverService } from "./DocumentRetrieverService";
-import { DocumentStore } from "./DocumentStore";
+import { DocumentStoreFactory } from "./DocumentStoreFactory";
 import type { EmbeddingModelConfig } from "./embeddings/EmbeddingConfig";
 import {
+  ConfigurationError,
   LibraryNotFoundInStoreError,
   StoreError,
   VersionNotFoundInStoreError,
 } from "./errors";
+import type { IDocumentStore } from "./IDocumentStore";
 import type {
   DbVersionWithLibrary,
   FindVersionResult,
+  LibrarySuggestion,
   LibrarySummary,
   ScraperConfig,
   StoreSearchResult,
@@ -31,15 +34,16 @@ import type {
 } from "./types";
 
 /**
- * Provides semantic search capabilities across different versions of library documentation.
+ * Provides content management and semantic chunking capabilities across different versions of library documentation.
  * Uses content-type-specific pipelines for processing and splitting content.
  */
 export class DocumentManagementService {
   private readonly appConfig: AppConfig;
-  private readonly store: DocumentStore;
+  private readonly store: IDocumentStore;
   private readonly documentRetriever: DocumentRetrieverService;
   private readonly pipelines: ContentPipeline[];
   private readonly eventBus: EventBusService;
+  private embeddingModel: Embeddings | null = null;
 
   constructor(eventBus: EventBusService, appConfig: AppConfig) {
     this.appConfig = appConfig;
@@ -48,15 +52,8 @@ export class DocumentManagementService {
     if (!storePath) {
       throw new Error("storePath is required when not using a remote server");
     }
-    // Handle special :memory: case for in-memory databases (primarily for testing)
-    const dbPath =
-      storePath === ":memory:" ? ":memory:" : path.join(storePath, "documents.db");
 
-    logger.debug(`Using database path: ${dbPath}`);
-
-    // Directory creation is handled by the centralized path resolution
-
-    this.store = new DocumentStore(dbPath, this.appConfig);
+    this.store = DocumentStoreFactory.create(this.appConfig);
     this.documentRetriever = new DocumentRetrieverService(this.store, this.appConfig);
 
     // Initialize content pipelines for different content types including universal TextPipeline fallback
@@ -84,6 +81,7 @@ export class DocumentManagementService {
    */
   async initialize(): Promise<void> {
     await this.store.initialize();
+    this.embeddingModel = this.store.getEmbeddingModel();
   }
 
   /**
@@ -167,6 +165,7 @@ export class DocumentManagementService {
     const libMap = await this.store.queryLibraryVersions();
     const summaries: LibrarySummary[] = [];
     for (const [library, versions] of libMap) {
+      const firstVersion = versions[0];
       const vs = versions.map(
         (v) =>
           ({
@@ -183,7 +182,11 @@ export class DocumentManagementService {
             sourceUrl: v.sourceUrl ?? undefined,
           }) satisfies VersionSummary,
       );
-      summaries.push({ library, versions: vs });
+      summaries.push({
+        library,
+        description: firstVersion?.description ?? null,
+        versions: vs,
+      });
     }
     return summaries;
   }
@@ -193,6 +196,13 @@ export class DocumentManagementService {
    */
   async findVersionsBySourceUrl(url: string): Promise<DbVersionWithLibrary[]> {
     return this.store.findVersionsBySourceUrl(url);
+  }
+
+  /**
+   * Finds libraries matching the given query using FTS and trigram similarity.
+   */
+  async findLibraries(query: string, limit = 5): Promise<LibrarySuggestion[]> {
+    return this.store.findLibraries(query, limit);
   }
 
   /**
@@ -211,20 +221,8 @@ export class DocumentManagementService {
     if (!libraryRecord) {
       logger.warn(`⚠️  Library '${library}' not found.`);
 
-      // Library doesn't exist, fetch all libraries to provide suggestions
-      const allLibraries = await this.listLibraries();
-      const libraryNames = allLibraries.map((lib) => lib.library);
-
-      let suggestions: string[] = [];
-      if (libraryNames.length > 0) {
-        const fuse = new Fuse(libraryNames, {
-          threshold: 0.7, // Adjust threshold for desired fuzziness (0=exact, 1=match anything)
-        });
-        const results = fuse.search(library.toLowerCase());
-        // Take top 3 suggestions
-        suggestions = results.slice(0, 3).map((result) => result.item);
-        logger.info(`🔍 Found suggestions: ${suggestions.join(", ")}`);
-      }
+      const suggestions = await this.store.findLibraries(library, 3);
+      logger.info(`🔍 Found suggestions: ${suggestions.map((s) => s.name).join(", ")}`);
 
       throw new LibraryNotFoundInStoreError(library, suggestions);
     }
@@ -431,6 +429,10 @@ export class DocumentManagementService {
     version: string | null | undefined,
     depth: number,
     result: ScrapeResult,
+    scraperOptions?: Pick<
+      ScraperOptions,
+      "chunkingStrategy" | "semanticThreshold" | "description"
+    >,
   ): Promise<void> {
     const processingStart = performance.now();
     const normalizedVersion = this.normalizeVersion(version);
@@ -446,11 +448,40 @@ export class DocumentManagementService {
       return;
     }
 
+    // If a description was provided, store it on the library record via resolveVersionId upsert
+    if (scraperOptions?.description !== undefined) {
+      await this.store.resolveVersionId(
+        library.toLowerCase(),
+        normalizedVersion,
+        scraperOptions.description,
+      );
+    }
+
+    let finalResult = result;
+    if (scraperOptions?.chunkingStrategy === "semantic") {
+      if (!this.embeddingModel) {
+        throw new ConfigurationError(
+          "Semantic chunking requires an embedding model to be configured. " +
+            "Please set the EMBEDDING_MODEL environment variable.",
+        );
+      }
+      const semanticChunker = new SemanticChunkingStrategy(
+        this.embeddingModel,
+        scraperOptions.semanticThreshold,
+      );
+      const fullText = chunks.map((c: Chunk) => c.content).join("\n\n");
+      const semanticChunks = await semanticChunker.splitText(fullText);
+      logger.info(
+        `✂️  Semantic chunking: ${chunks.length} → ${semanticChunks.length} chunks`,
+      );
+      finalResult = { ...result, chunks: semanticChunks };
+    }
+
     try {
-      logger.info(`✂️  Storing ${chunks.length} pre-split chunks`);
+      logger.info(`✂️  Storing ${finalResult.chunks.length} pre-split chunks`);
 
       // Add split documents to store
-      await this.store.addDocuments(library, normalizedVersion, depth, result);
+      await this.store.addDocuments(library, normalizedVersion, depth, finalResult);
 
       // Emit library change event after adding documents
       this.eventBus.emit(EventType.LIBRARY_CHANGE, undefined);

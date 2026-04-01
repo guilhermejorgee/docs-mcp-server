@@ -8,9 +8,12 @@ import {
   OpenAIEmbeddings,
   type OpenAIEmbeddingsParams,
 } from "@langchain/openai";
+import { EnvSecretProvider } from "../../secrets/EnvSecretProvider";
+import type { ISecretProvider } from "../../secrets/ISecretProvider";
 import type { AppConfig } from "../../utils/config";
 import { MissingCredentialsError } from "../errors";
 import { FixedDimensionEmbeddings } from "./FixedDimensionEmbeddings";
+import { OAuth2TokenProvider } from "./OAuth2TokenProvider";
 
 /**
  * Supported embedding model providers. Each provider requires specific environment
@@ -54,12 +57,19 @@ export class ModelConfigurationError extends Error {
  * Does not validate if the credentials are correct, only if they are present.
  *
  * @param provider The embedding provider to check
+ * @param embeddingsConfig Optional embeddings config — used to detect OAuth2 credentials for openai provider
  * @returns true if credentials are available, false if no credentials found
  */
-export function areCredentialsAvailable(provider: EmbeddingProvider): boolean {
+export function areCredentialsAvailable(
+  provider: EmbeddingProvider,
+  embeddingsConfig?: AppConfig["embeddings"],
+): boolean {
   switch (provider) {
     case "openai":
-      return !!process.env.OPENAI_API_KEY;
+      return (
+        !!process.env.OPENAI_API_KEY ||
+        !!(embeddingsConfig?.tokenUrl && embeddingsConfig?.clientId)
+      );
 
     case "vertex":
       return !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
@@ -123,6 +133,7 @@ export function createEmbeddingModel(
     requestTimeoutMs?: number;
     vectorDimension?: number;
     config?: AppConfig["embeddings"];
+    secretProvider?: ISecretProvider;
   },
 ): Embeddings {
   const config = runtime?.config;
@@ -144,22 +155,50 @@ export function createEmbeddingModel(
 
   switch (provider) {
     case "openai": {
+      const cfg: Partial<OpenAIEmbeddingsParams> & { configuration?: ClientOptions } = {
+        ...baseConfig,
+        modelName: model,
+        batchSize: 512,
+        timeout: requestTimeoutMs,
+      };
+      const baseURL = process.env.OPENAI_API_BASE;
+
+      // PATH B — OAuth2 client_credentials (tokenUrl + clientId configured)
+      if (config?.tokenUrl && config?.clientId) {
+        const tokenProvider = new OAuth2TokenProvider({
+          tokenUrl: config.tokenUrl,
+          clientId: config.clientId,
+          getClientSecret: () =>
+            (runtime?.secretProvider ?? new EnvSecretProvider()).getSecret(
+              config.clientSecretKey,
+            ),
+          tokenCacheTtlMs: config.tokenCacheTtlMs,
+        });
+        cfg.configuration = {
+          baseURL,
+          timeout: requestTimeoutMs,
+          apiKey: "oauth2", // non-empty placeholder required by the SDK
+          fetch: async (
+            url: RequestInfo | URL,
+            init?: RequestInit,
+          ): Promise<Response> => {
+            const token = await tokenProvider.getToken();
+            const headers = new Headers(init?.headers);
+            headers.set("Authorization", `Bearer ${token}`);
+            return globalThis.fetch(url, { ...init, headers });
+          },
+        };
+        return new OpenAIEmbeddings(cfg);
+      }
+
+      // PATH A — static OPENAI_API_KEY (unchanged)
       if (!process.env.OPENAI_API_KEY) {
         throw new MissingCredentialsError("openai", ["OPENAI_API_KEY"]);
       }
-      const config: Partial<OpenAIEmbeddingsParams> & { configuration?: ClientOptions } =
-        {
-          ...baseConfig,
-          modelName: model,
-          batchSize: 512, // OpenAI supports large batches
-          timeout: requestTimeoutMs,
-        };
-      // Add custom base URL if specified
-      const baseURL = process.env.OPENAI_API_BASE;
-      config.configuration = baseURL
+      cfg.configuration = baseURL
         ? { baseURL, timeout: requestTimeoutMs }
         : { timeout: requestTimeoutMs };
-      return new OpenAIEmbeddings(config);
+      return new OpenAIEmbeddings(cfg);
     }
 
     case "vertex": {
